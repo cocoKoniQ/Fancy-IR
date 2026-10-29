@@ -25,7 +25,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -47,6 +47,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.github.cocokoniq.fancyir.core.designsystem.HudPalette
+import io.github.cocokoniq.fancyir.core.designsystem.HudShapes
+import io.github.cocokoniq.fancyir.core.designsystem.HudSpace
 import io.github.cocokoniq.fancyir.core.designsystem.HudType
 import io.github.cocokoniq.fancyir.core.designsystem.LocalHudPalette
 import io.github.cocokoniq.fancyir.core.designsystem.ScanSweep
@@ -64,44 +66,64 @@ internal fun HudOverlay(ui: HudUiState, modifier: Modifier = Modifier) {
     val palette = LocalHudPalette.current
 
     BoxWithConstraints(modifier) {
-        val scanning = ui.phase == TargetPhase.SCANNING || ui.phase == TargetPhase.ACQUIRING
+        val scanning = (ui.phase == TargetPhase.SCANNING || ui.phase == TargetPhase.ACQUIRING) && !ui.lapMode
         if (scanning) ScanSweep(color = palette.ink, modifier = Modifier.fillMaxSize())
 
-        Reticle(ui, palette, Modifier.fillMaxSize())
+        if (!ui.lapMode) Reticle(ui, palette, Modifier.fillMaxSize())
+        ui.beamMarker?.let { BeamMarkerView(it, palette) }
 
         Column(
             modifier = Modifier
                 .align(Alignment.Center)
-                .offset(y = maxWidth * 0.19f + 28.dp)
-                .padding(horizontal = 24.dp),
+                .offset(y = if (ui.lapMode) 0.dp else maxWidth * 0.19f + HudSpace.xl)
+                .padding(horizontal = HudSpace.xl),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(HudSpace.s),
         ) {
-            TargetLabel(ui, palette)
+            TargetCard(ui, palette)
         }
 
-        Column(
-            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().safeDrawingPadding(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Radar(ui.radar, palette, Modifier.fillMaxWidth().height(40.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (ui.navMode) Capsule("NAV", palette.signal)
-                if (ui.demoMode) Capsule("DEMO · NO IR EMITTER", palette.amber)
-            }
-        }
+        TopBar(ui, palette, Modifier.align(Alignment.TopCenter))
 
-        ui.status?.let {
-            Text(
-                text = it,
-                style = HudType.Status,
-                color = palette.ink,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.align(Alignment.BottomCenter).safeDrawingPadding().padding(bottom = 32.dp),
-            )
-        }
+        if (ui.showGestureHints && ui.radial == null && !ui.lapMode) GestureHints(ui, palette)
 
         ui.radial?.let { RadialDeck(it, ui.charge, palette) }
+    }
+}
+
+@Composable
+private fun TopBar(ui: HudUiState, palette: HudPalette, modifier: Modifier) {
+    Column(modifier.fillMaxWidth().safeDrawingPadding().padding(top = HudSpace.s), horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = HudSpace.l)) {
+            HeadingIndicator(ui.headingConfidence, palette, Modifier.size(HudSpace.xl))
+            Radar(ui.radar, palette, Modifier.weight(1f).height(40.dp))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(HudSpace.s)) {
+            if (ui.lapMode) Capsule("LAP MODE", palette.signal)
+            if (ui.navMode) Capsule("NAV", palette.signal)
+            if (ui.demoMode) Capsule("DEMO · NO IR EMITTER", palette.amber)
+        }
+    }
+}
+
+/**
+ * Spatial comprehension at a glance: a compass rose whose needle fills with how much the
+ * heading can be trusted (magnetometer health, time since correction).
+ */
+@Composable
+private fun HeadingIndicator(confidence: Float, palette: HudPalette, modifier: Modifier) {
+    val color = when {
+        confidence >= 0.6f -> palette.signal
+        confidence >= 0.3f -> palette.amber
+        else -> palette.ink.copy(alpha = 0.35f)
+    }
+    Canvas(modifier) {
+        val r = size.minDimension / 2
+        drawCircle(palette.ink.copy(alpha = 0.25f), r - 1.dp.toPx(), center, style = Stroke(1.dp.toPx()))
+        drawArc(color, -90f, 360f * confidence.coerceIn(0f, 1f), useCenter = false,
+            topLeft = Offset(center.x - r + 1.dp.toPx(), center.y - r + 1.dp.toPx()),
+            size = Size((r - 1.dp.toPx()) * 2, (r - 1.dp.toPx()) * 2), style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
+        drawLine(color, center, Offset(center.x, center.y - r * 0.55f), 2.dp.toPx(), StrokeCap.Round)
     }
 }
 
@@ -118,11 +140,12 @@ private fun Reticle(ui: HudUiState, palette: HudPalette, modifier: Modifier) {
         label = "reticleScale",
     )
     val color by animateColorAsState(
-        targetValue = when (ui.phase) {
-            TargetPhase.LOCKED -> palette.signal
-            TargetPhase.UNRECOGNIZED -> palette.amber
-            TargetPhase.ACQUIRING -> palette.ink.copy(alpha = 0.9f)
-            TargetPhase.SCANNING -> palette.ink.copy(alpha = 0.7f)
+        targetValue = when {
+            ui.recon != null -> palette.infrared.copy(alpha = 0.9f)
+            ui.phase == TargetPhase.LOCKED -> palette.signal
+            ui.phase == TargetPhase.UNRECOGNIZED -> palette.amber
+            ui.phase == TargetPhase.ACQUIRING -> palette.ink.copy(alpha = 0.9f)
+            else -> palette.ink.copy(alpha = 0.7f)
         },
         label = "reticleColor",
     )
@@ -206,11 +229,32 @@ private fun DrawScope.drawBrackets(center: Offset, side: Float, color: Color, st
     drawLine(color.copy(alpha = color.alpha * 0.5f), center - Offset(0f, 8f), center + Offset(0f, 8f), 1.5f)
 }
 
+/**
+ * Point-blank parallax (docs/hardware/rear-camera-ir-blaster-spec.md §5.B): within half a metre
+ * the emitter's 14–28 mm offset from the lens is visible, so mark where the beam really lands.
+ */
 @Composable
-private fun TargetLabel(ui: HudUiState, palette: HudPalette) {
+private fun BeamMarkerView(marker: BeamMarker, palette: HudPalette) {
+    val measurer = rememberTextMeasurer()
+    Canvas(Modifier.fillMaxSize()) {
+        val at = Offset(size.width / 2 + marker.dxPx, size.height / 2 + marker.dyPx)
+        drawCircle(palette.infrared.copy(alpha = 0.25f), 14.dp.toPx(), at)
+        drawCircle(palette.infrared, 14.dp.toPx(), at, style = Stroke(2.dp.toPx()))
+        drawCircle(palette.infrared, 2.dp.toPx(), at)
+        val label = measurer.measure("BEAM · ${(marker.distanceM * 100).roundToInt()} cm", HudType.Caption.copy(color = palette.infrared))
+        drawText(label, topLeft = Offset(at.x - label.size.width / 2f, at.y + 18.dp.toPx()))
+    }
+}
+
+@Composable
+private fun TargetCard(ui: HudUiState, palette: HudPalette) {
     when (ui.phase) {
         TargetPhase.LOCKED -> {
-            Text(ui.targetName ?: "", style = HudType.Title, color = palette.signal, textAlign = TextAlign.Center)
+            Text(ui.targetName.orEmpty(), style = HudType.Title, color = palette.signal, textAlign = TextAlign.Center)
+            ui.climate?.let { climate ->
+                Text(if (climate.power) "${climate.tempC}°" else "OFF", style = HudType.Display, color = palette.ink)
+                Text("${climate.mode.uppercase()} · ${climate.fan.uppercase()} · ASSUMED", style = HudType.Caption, color = palette.amber)
+            }
             val detail = listOfNotNull(
                 ui.targetCategory,
                 if (ui.isPredicted) "PREDICTED" else null,
@@ -218,12 +262,27 @@ private fun TargetLabel(ui: HudUiState, palette: HudPalette) {
                 ui.stepLabel?.let { "↔ $it" },
             ).joinToString("  ·  ")
             Text(detail, style = HudType.Caption, color = palette.ink.copy(alpha = 0.8f), textAlign = TextAlign.Center)
-            if (ui.painting != null) Text("LEARNING · HOLD STEADY", style = HudType.Caption, color = palette.signal)
+            if (ui.painting != null) Text("LEARNING ITS LOOK · HOLD STEADY", style = HudType.Caption, color = palette.signal)
         }
-        TargetPhase.ACQUIRING -> ui.hint?.let { Text("$it ?", style = HudType.Status, color = palette.ink.copy(alpha = 0.6f)) }
+        TargetPhase.ACQUIRING -> ui.hint?.let { Text("${it.uppercase()} ?", style = HudType.Status, color = palette.ink.copy(alpha = 0.6f)) }
         TargetPhase.UNRECOGNIZED ->
-            Text("UNKNOWN DEVICE · HOLD ▼ TO PICK", style = HudType.Status, color = palette.amber, textAlign = TextAlign.Center)
-        TargetPhase.SCANNING -> Text("SCANNING", style = HudType.Caption, color = palette.ink.copy(alpha = 0.5f))
+            Text("UNKNOWN DEVICE · HOLD ▼ TO ADD IT", style = HudType.Status, color = palette.amber, textAlign = TextAlign.Center)
+        TargetPhase.SCANNING -> if (ui.recon == null && !ui.vaultEmpty) Text("SCANNING", style = HudType.Caption, color = palette.ink.copy(alpha = 0.5f))
+    }
+}
+
+/** First few locks only: where the verbs are (DESIGN.md §2.3). */
+@Composable
+private fun GestureHints(ui: HudUiState, palette: HudPalette) {
+    val ink = palette.ink.copy(alpha = 0.45f)
+    Box(Modifier.fillMaxSize().safeDrawingPadding().padding(HudSpace.l)) {
+        ui.dialLabel?.let {
+            Text("↕\n$it", style = HudType.Caption, color = ink, textAlign = TextAlign.Center, modifier = Modifier.align(Alignment.CenterEnd))
+        }
+        ui.stepLabel?.let {
+            Text("←  $it  →", style = HudType.Caption, color = ink, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp))
+        }
+        Text("TAP · HOLD = POWER", style = HudType.Caption, color = ink, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 72.dp))
     }
 }
 
@@ -232,28 +291,30 @@ private fun Radar(blips: List<RadarBlip>, palette: HudPalette, modifier: Modifie
     val measurer = rememberTextMeasurer()
     Canvas(modifier) {
         val y = size.height * 0.35f
-        drawLine(palette.ink.copy(alpha = 0.25f), Offset(size.width * 0.08f, y), Offset(size.width * 0.92f, y), 1f)
+        drawLine(palette.ink.copy(alpha = 0.25f), Offset(size.width * 0.06f, y), Offset(size.width * 0.94f, y), 1f)
         drawLine(palette.ink.copy(alpha = 0.6f), Offset(size.width / 2, y - 6f), Offset(size.width / 2, y + 6f), 1.5f)
         for (blip in blips) {
             val clamped = blip.relativeAzimuthDeg.coerceIn(-90f, 90f)
             val x = size.width / 2 + clamped / 90f * size.width * 0.42f
-            val color = if (blip.locked) palette.signal else palette.ink.copy(alpha = if (abs(blip.relativeAzimuthDeg) > 90f) 0.4f else 0.8f)
-            drawCircle(color, radius = 5f, center = Offset(x, y))
-            val layout = measurer.measure(blip.label, HudType.Caption.copy(color = color))
-            drawText(layout, topLeft = Offset(x - layout.size.width / 2f, y + 8f))
+            val behind = abs(blip.relativeAzimuthDeg) > 90f
+            val color = if (blip.locked) palette.signal else palette.ink.copy(alpha = if (behind) 0.4f else 0.8f)
+            drawCircle(color, radius = 4.dp.toPx(), center = Offset(x, y))
+            val text = if (behind) (if (blip.relativeAzimuthDeg > 0) "${blip.label} →" else "← ${blip.label}") else blip.label
+            val layout = measurer.measure(text, HudType.Caption.copy(color = color))
+            drawText(layout, topLeft = Offset((x - layout.size.width / 2f).coerceIn(0f, size.width - layout.size.width), y + 8f))
         }
     }
 }
 
 @Composable
-private fun Capsule(text: String, color: Color) {
+internal fun Capsule(text: String, color: Color) {
     Text(
         text = text,
         style = HudType.Caption,
         color = color,
         modifier = Modifier
-            .background(Color.Black.copy(alpha = 0.35f), RoundedCornerShape(50))
-            .padding(horizontal = 10.dp, vertical = 4.dp),
+            .background(Color.Black.copy(alpha = 0.4f), HudShapes.pill)
+            .padding(horizontal = HudSpace.m, vertical = HudSpace.xs),
     )
 }
 
@@ -263,7 +324,7 @@ private fun RadialDeck(radial: RadialUi, charge: Float, palette: HudPalette) {
     val density = LocalDensity.current
     val reach = with(density) { 104.dp.toPx() }
     val slotWidth = with(density) { 120.dp.toPx() }
-    val slotHeight = with(density) { 32.dp.toPx() }
+    val slotHeight = with(density) { HudSpace.touch.toPx() }
     Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize()) {
             val center = Offset(radial.x, radial.y)
@@ -293,8 +354,9 @@ private fun RadialDeck(radial: RadialUi, charge: Float, palette: HudPalette) {
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .offset { IntOffset((radial.x + dx - slotWidth / 2).roundToInt(), (radial.y + dy - slotHeight / 2).roundToInt()) }
-                    .size(120.dp, 32.dp)
-                    .background(if (hovered) palette.signal.copy(alpha = 0.25f) else palette.scrim, RoundedCornerShape(50)),
+                    .width(120.dp)
+                    .height(HudSpace.touch)
+                    .background(if (hovered) palette.signal.copy(alpha = 0.25f) else Color.Black.copy(alpha = 0.55f), HudShapes.pill),
             ) {
                 Text(label, style = HudType.Caption, color = if (hovered) palette.signal else palette.ink)
             }
@@ -305,7 +367,7 @@ private fun RadialDeck(radial: RadialUi, charge: Float, palette: HudPalette) {
             color = if (charge >= 1f) palette.infrared else palette.ink.copy(alpha = 0.7f),
             modifier = Modifier.offset {
                 IntOffset((radial.x - slotWidth / 2).roundToInt(), (radial.y + with(density) { 44.dp.toPx() }).roundToInt())
-            }.size(120.dp, 20.dp),
+            }.width(120.dp),
             textAlign = TextAlign.Center,
         )
     }

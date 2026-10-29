@@ -8,8 +8,8 @@ android {
 
     defaultConfig {
         applicationId = "io.github.cocokoniq.fancyir"
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     buildTypes {
@@ -25,6 +25,7 @@ dependencies {
     implementation(project(":feature:hud"))
     implementation(project(":core:designsystem"))
     implementation(project(":core:domain"))
+    implementation(project(":core:data"))
     implementation(project(":core:transmitter"))
     implementation(project(":core:haptics"))
     implementation(project(":core:sensors"))

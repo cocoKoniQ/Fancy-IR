@@ -19,6 +19,7 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.lifecycle.LifecycleOwner
+import com.google.common.util.concurrent.ListenableFuture
 import io.github.cocokoniq.fancyir.core.domain.recognition.Fingerprinter
 import io.github.cocokoniq.fancyir.core.domain.recognition.LumaChromaTile
 import kotlinx.coroutines.awaitCancellation
@@ -29,7 +30,11 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlin.math.sqrt
 
 /** One analysed frame: the reticle fingerprint plus the scene statistics the HUD needs. */
@@ -71,7 +76,7 @@ class ViewfinderController(
 
     /** Binds to [lifecycleOwner] and suspends until cancelled, then unbinds. */
     suspend fun bind(lifecycleOwner: LifecycleOwner) {
-        val provider = ProcessCameraProvider.awaitInstance(context)
+        val provider = ProcessCameraProvider.getInstance(context).await()
         val selector = CameraSelector.DEFAULT_BACK_CAMERA
 
         val previewBuilder = Preview.Builder()
@@ -147,4 +152,19 @@ class ViewfinderController(
     private companion object {
         const val SALIENT_CONTRAST = 0.06f
     }
+}
+
+/** Suspends until the future completes; cancelling the caller cancels the future. */
+private suspend fun <T> ListenableFuture<T>.await(): T = suspendCancellableCoroutine { continuation ->
+    addListener(
+        {
+            try {
+                continuation.resume(get())
+            } catch (e: ExecutionException) {
+                continuation.resumeWithException(e.cause ?: e)
+            }
+        },
+        Runnable::run,
+    )
+    continuation.invokeOnCancellation { cancel(false) }
 }

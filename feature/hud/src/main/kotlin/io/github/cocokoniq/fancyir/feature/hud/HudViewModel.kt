@@ -163,7 +163,7 @@ class HudViewModel(private val deps: HudDependencies) : ViewModel() {
                 send(ControlMapper.volumeKey(input.up, profile))
             }
             Input.NavBack -> send(ControlMapper.navBack())
-            is Input.PickEntry -> onPick(input.id)
+            is Input.PickEntry -> pickEntry(input.id)
             Input.ClosePicker -> picker = null
             is Input.Tick -> onTick(input.nowMs)
         }
@@ -321,7 +321,7 @@ class HudViewModel(private val deps: HudDependencies) : ViewModel() {
         )
     }
 
-    private fun onPick(id: String) {
+    private fun pickEntry(id: String) {
         when (pickerKind) {
             PickerKind.DEVICES -> {
                 val device = deps.devices.get(DeviceId(id)) ?: return

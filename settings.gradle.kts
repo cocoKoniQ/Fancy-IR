@@ -23,3 +23,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Fancy-IR"
 include(":core:ir")
+include(":core:irdb")

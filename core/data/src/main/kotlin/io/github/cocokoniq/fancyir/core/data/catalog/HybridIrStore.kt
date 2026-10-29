@@ -47,7 +47,15 @@ class HybridIrStore(
         if (!allowRemote || !settings.getBoolean(SettingsStore.REMOTE_LOOKUP_ENABLED, default = true)) {
             return CandidateLookup.Unavailable("not in the offline catalog")
         }
+        return fetchRemote(category, brand)
+    }
 
+    /**
+     * Asks Layer 3 even when Layer 2 has candidates — used when none of the bundled code sets
+     * made the device react. New finds are cached, and only those are returned.
+     */
+    suspend fun fetchRemote(category: DeviceCategory, brand: String): CandidateLookup {
+        val known = catalog.candidates(category, brand).map { it.id }.toSet()
         val found = ArrayList<CatalogCodeset>()
         var failure: RemoteIrdbException? = null
         for (remote in remotes) {
@@ -57,10 +65,12 @@ class HybridIrStore(
                 failure = failure ?: e
             }
         }
-        if (found.isEmpty()) {
-            return CandidateLookup.Unavailable(failure?.message ?: "no code sets found online", rateLimited = failure?.isRateLimited == true)
+        val fresh = found.distinctBy { it.id }.filterNot { it.id in known }
+        if (fresh.isEmpty()) {
+            return CandidateLookup.Unavailable(failure?.message ?: "no new code sets found online", rateLimited = failure?.isRateLimited == true)
         }
-        catalog.cacheRemote(found.distinctBy { it.id })
-        return CandidateLookup.Fetched(catalog.candidates(category, brand))
+        catalog.cacheRemote(fresh)
+        // Only the newcomers: whatever was already known has just been tried.
+        return CandidateLookup.Fetched(catalog.candidates(category, brand).filterNot { it.id in known })
     }
 }

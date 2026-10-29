@@ -1,18 +1,23 @@
 package io.github.cocokoniq.fancyir
 
 import android.content.Context
-import io.github.cocokoniq.fancyir.core.domain.device.Device
-import io.github.cocokoniq.fancyir.core.domain.device.DeviceId
-import io.github.cocokoniq.fancyir.core.domain.device.DeviceRepository
-import io.github.cocokoniq.fancyir.core.domain.device.InMemoryDeviceRepository
+import io.github.cocokoniq.fancyir.core.data.catalog.AssetCatalog
+import io.github.cocokoniq.fancyir.core.data.catalog.CatalogRepository
+import io.github.cocokoniq.fancyir.core.data.catalog.HybridIrStore
+import io.github.cocokoniq.fancyir.core.data.catalog.asSource
+import io.github.cocokoniq.fancyir.core.data.db.FancyIrDatabase
+import io.github.cocokoniq.fancyir.core.data.settings.SettingsStore
+import io.github.cocokoniq.fancyir.core.data.vault.SpatialVault
 import io.github.cocokoniq.fancyir.core.domain.recognition.BaselineFingerprinter
 import io.github.cocokoniq.fancyir.core.haptics.HapticEngine
 import io.github.cocokoniq.fancyir.core.ir.engine.IrEngine
 import io.github.cocokoniq.fancyir.core.ir.engine.IrTransmitter
 import io.github.cocokoniq.fancyir.core.ir.engine.RecordingIrTransmitter
-import io.github.cocokoniq.fancyir.core.irdb.Codeset
-import io.github.cocokoniq.fancyir.core.irdb.StarterLibrary
+import io.github.cocokoniq.fancyir.core.irdb.remote.FlipperIrdbRemote
+import io.github.cocokoniq.fancyir.core.irdb.remote.SmartIrRemote
+import io.github.cocokoniq.fancyir.core.irdb.remote.UrlConnectionFetcher
 import io.github.cocokoniq.fancyir.core.sensors.AimSensor
+import io.github.cocokoniq.fancyir.core.sensors.PhoneHardware
 import io.github.cocokoniq.fancyir.core.transmitter.ConsumerIrTransmitter
 import io.github.cocokoniq.fancyir.core.vision.ViewfinderController
 import io.github.cocokoniq.fancyir.feature.hud.HudDependencies
@@ -36,17 +41,20 @@ class AppGraph(context: Context) {
 
     val engine = IrEngine(transmitter, appScope)
 
-    val devices: DeviceRepository = InMemoryDeviceRepository(
-        StarterLibrary.entries.map { entry ->
-            Device(
-                id = DeviceId(entry.id),
-                name = entry.label,
-                category = entry.category,
-                brand = entry.brand,
-                codeset = Codeset.from(StarterLibrary.load(entry)),
-            )
-        },
-    )
+    private val database by lazy { FancyIrDatabase.open(appContext) }
+    val settings by lazy { SettingsStore(database) }
+
+    /** Layer 1. */
+    val vault by lazy { SpatialVault(database) }
+
+    /** Layer 2. */
+    val catalog by lazy { CatalogRepository(database, settings) }
+
+    /** Layer 2 → Layer 3: GitHub-hosted open IR databases, fetched on demand and cached. */
+    val lookup by lazy {
+        val http = UrlConnectionFetcher(userAgent = "Fancy-IR (+https://github.com/cocoKoniQ/Fancy-IR)")
+        HybridIrStore(catalog, listOf(FlipperIrdbRemote(http).asSource(), SmartIrRemote(http).asSource()), settings)
+    }
 
     val haptics = HapticEngine(appContext)
     val aimSensor = AimSensor(appContext)
@@ -54,10 +62,15 @@ class AppGraph(context: Context) {
 
     fun hudDependencies(density: Float) = HudDependencies(
         engine = engine,
-        devices = devices,
+        vault = vault,
+        catalog = catalog,
+        lookup = lookup,
+        catalogAsset = AssetCatalog(appContext),
+        settings = settings,
         haptics = haptics,
         aimSensor = aimSensor,
         viewfinder = viewfinder,
+        emitterMatch = PhoneHardware.emitterMatch(appContext),
         density = density,
     )
 }

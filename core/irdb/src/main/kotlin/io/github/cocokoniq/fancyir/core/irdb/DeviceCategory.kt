@@ -1,7 +1,7 @@
 package io.github.cocokoniq.fancyir.core.irdb
 
 /** Our device taxonomy, mapped from Flipper-IRDB's top-level folders. */
-enum class DeviceCategory(val label: String, private val irdbFolders: Set<String>) {
+enum class DeviceCategory(val label: String, val irdbFolders: Set<String>) {
     TV("TV", setOf("TVs")),
     MONITOR("Monitor", setOf("Monitors", "Touchscreen_Displays")),
     PROJECTOR("Projector", setOf("Projectors")),

@@ -22,10 +22,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -64,18 +66,40 @@ fun HudScreen(viewModel: HudViewModel, viewfinder: ViewfinderController) {
     val surfaceRequest by viewfinder.surfaceRequest.collectAsStateWithLifecycle()
     val ui by viewModel.ui.collectAsStateWithLifecycle()
 
-    BackHandler(enabled = ui.picker != null) { viewModel.onClosePicker() }
-    BackHandler(enabled = ui.picker == null && ui.navMode) { viewModel.onNavBack() }
+    BackHandler(enabled = ui.sheet != null) { viewModel.onSheet(HudViewModel.SheetAction.Close) }
+    BackHandler(enabled = ui.sheet == null && ui.recon != null) { viewModel.onRecon(HudViewModel.ReconAction.CANCEL) }
+    BackHandler(enabled = ui.sheet == null && ui.recon == null && ui.navMode) { viewModel.onNavBack() }
 
     CompositionLocalProvider(LocalHudPalette provides if (ui.night) HudPalette.Night else HudPalette.Day) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .onSizeChanged { viewModel.onViewport(it.width.toFloat()) },
+        ) {
             surfaceRequest?.let { CameraXViewfinder(surfaceRequest = it, modifier = Modifier.fillMaxSize()) }
-            if (ui.night) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)))
+            // Dim the image in the dark and in lap mode: the viewfinder isn't what you're looking at.
+            if (ui.night || ui.lapMode) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = if (ui.lapMode) 0.75f else 0.4f)))
             GestureSurface(onInput = viewModel::onPointer, modifier = Modifier.fillMaxSize()) {
                 HudOverlay(ui, Modifier.fillMaxSize())
             }
-            ui.picker?.let { PickerPanel(it, onPick = viewModel::onPick, onDismiss = viewModel::onClosePicker) }
+            BottomZone(ui, viewModel, Modifier.align(Alignment.BottomCenter))
+            ui.sheet?.let { sheet -> HudSheet(sheet, onAction = viewModel::onSheet) }
         }
+    }
+}
+
+/** The thumb zone (DESIGN.md §1): recon, first-run guidance and status live here, never at the top. */
+@Composable
+private fun BottomZone(ui: HudUiState, viewModel: HudViewModel, modifier: Modifier) {
+    when {
+        ui.recon != null -> ReconPanel(ui.recon, onAction = viewModel::onRecon, modifier = modifier)
+        ui.vaultEmpty && ui.sheet == null -> FirstRunCard(
+            onAdd = { viewModel.onSheet(HudViewModel.SheetAction.OpenDevices) },
+            onPhone = { viewModel.onSheet(HudViewModel.SheetAction.OpenPhone) },
+            modifier = modifier,
+        )
+        else -> StatusLine(ui.status, modifier)
     }
 }
 

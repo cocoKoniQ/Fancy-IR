@@ -26,7 +26,10 @@ jobs:
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       - name: Pure-Kotlin core tests
-        run: ./gradlew :core:ir:test :core:irdb:test :core:domain:test
+        run: ./gradlew :core:ir:test :core:irdb:test :core:domain:test :tools:irdb-compiler:compileKotlin
+
+      - name: Room layer tests (Robolectric)
+        run: ./gradlew :core:data:testDebugUnitTest
 
       - name: Assemble debug APK
         run: ./gradlew :app:assembleDebug

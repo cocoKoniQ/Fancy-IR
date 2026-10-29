@@ -1,5 +1,6 @@
 package io.github.cocokoniq.fancyir.core.ir.engine
 
+import io.github.cocokoniq.fancyir.core.ir.CompiledCommand
 import io.github.cocokoniq.fancyir.core.ir.IrCode
 import io.github.cocokoniq.fancyir.core.ir.IrPattern
 import io.github.cocokoniq.fancyir.core.ir.PatternSanitizer
@@ -16,6 +17,8 @@ data class FireRequest(
     /** Human-readable command, for the HUD and logs. */
     val label: String,
     val code: IrCode,
+    /** Pre-rendered form of [code] from the spatial vault; skips encoding entirely when present. */
+    val compiled: CompiledCommand? = null,
     /** Distinct key presses, e.g. five volume detents. */
     val presses: Int = 1,
     val priority: Priority = Priority.NORMAL,
@@ -113,6 +116,11 @@ class IrEngine(
     }
 
     private fun render(request: FireRequest): IrPattern {
+        request.compiled?.let { compiled ->
+            val toggles = BooleanArray(request.presses) { compiled.usesToggle && nextToggle(request.targetKey) }
+            val timings = compiled.render(request.presses) { toggles[it] }
+            return IrPattern(transmitter.capabilities.clampCarrier(compiled.carrierHz), PatternSanitizer.trimTrailingSpace(timings))
+        }
         var carrierHz = 0
         val timings = ArrayList<IntArray>(request.presses)
         repeat(request.presses) {

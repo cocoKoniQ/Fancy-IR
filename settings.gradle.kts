@@ -22,6 +22,10 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Fancy-IR"
-include(":core:ir")
-include(":core:irdb")
+
+include(":core:transmitter")
+include(":core:haptics")
+include(":core:sensors")
 include(":core:domain")
+include(":core:irdb")
+include(":core:ir")

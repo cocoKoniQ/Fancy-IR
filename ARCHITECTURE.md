@@ -1,6 +1,6 @@
 # Fancy-IR — Architecture
 
-> Status: **v0 proposal** (October 2026). This is a living document. Anything marked
+> Status: **v0.2** (October 2026): M0 done, M1 built, M2/M3 in progress (§7). This is a living document. Anything marked
 > **[DECISION]** is a choice we made and can revisit. Anything marked **[OPEN]** needs a call
 > from the product owner (see §10).
 
@@ -35,8 +35,9 @@ motion, haptics and the feature catalog.
    slows the HUD.
 4. **Thumb-to-photon under 50 ms.** From touch-up (or volume key) to IR leaving the LED. Every
    design choice in the fire path answers to this budget.
-5. **Offline and private by default.** No frame leaves the device unless the user explicitly
-   turns on cloud identification for a single onboarding.
+5. **Offline and private.** [DECISION] No camera frame ever leaves the device: recognition and
+   identification are on-device only. The only network use is the Layer 3 code-database
+   lookup (§3.8), which sends a category and brand name to GitHub and can be switched off.
 6. **Closed loop over guesswork.** The camera already looks at the device, so it can *see*
    whether a code worked. We use that during onboarding (Probe & Watch, §2.4) and for the
    self-healing of code sets (§3.6).
@@ -47,8 +48,8 @@ motion, haptics and the feature catalog.
 
 | Assumption | Reality | Consequence |
 |---|---|---|
-| "On these phones the emitter sits on the camera plateau." | Confirmed by a review for the OnePlus 15 (the IR window is in the camera module). For the Xiaomi 14/15/17, POCO F and vivo lines we found spec sheets that list an IR blaster but **not where it sits**. | `EmitterGeometry` registry keyed by `Build.MANUFACTURER/MODEL`, plus a one-time "find your blaster" calibration. Phones with a top-edge emitter get **Wand mode**: no viewfinder, orientation radar plus gestures (DESIGN §6). |
-| "What the camera sees is what the beam hits." | The lens-to-emitter offset is about 1–2 cm. That parallax is negligible at room distances, and the beam is much wider than the reticle. | Aiming is about *intent*. We never need to correct for parallax. |
+| "On these phones the emitter sits on the camera plateau." | Mapped per model in [`docs/hardware/rear-camera-ir-blaster-spec.md`](docs/hardware/rear-camera-ir-blaster-spec.md): 19 Xiaomi, POCO/Redmi, OnePlus, vivo, iQOO, realme, HONOR and Tecno/Infinix rows, each with position and a 14–28 mm offset from the main lens. | `EmitterCatalog` transcribes the spec; `EmitterMatcher` finds this phone by its user-visible device name (`Build.MODEL` is usually a code), with a manual choice saved as a setting. Phones with a top-edge emitter get **Wand mode**: no viewfinder, orientation radar plus gestures (DESIGN §6). |
+| "What the camera sees is what the beam hits." | The lens-to-emitter offset is 14–28 mm and the beam is ±15–25° wide: under 0.6° of error at 2 m, but visible point-blank (spec §5.A–B). | Aiming is about *intent*. Below 0.5 m (from the autofocus distance) the HUD marks where the beam actually lands (`Parallax`). |
 | "60 fps viewfinder, always." | At 60 fps exposure is capped at 16.6 ms, so a dark living room becomes a noisy, useless image for recognition. | The **HUD** is held at display refresh. The **camera** uses an AE target range such as `[30, 60]` so it can drop to 30 fps in the dark. Smoothness is perceived through the HUD. |
 | "The phone can learn codes from my old remote." | `ConsumerIrManager` is transmit-only. These phones have no IR receiver. | Codes come from databases, protocol generators and closed-loop probing. Optical learning through the camera is an R&D moonshot (§3.7). |
 | "IR transmit is fire-and-forget." | `transmit()` is **synchronous**: it blocks for the length of the pattern, calls are serialized by the system service, and AOSP rejects patterns over 2 s or with non-positive slices. Duty cycle can't be set (the HAL picks one). Carrier ranges differ per device. | A dedicated single-thread transmit actor with chunking, coalescing, deadlines and per-device quirks (§3.3). |
@@ -124,12 +125,28 @@ open, and so on, without any explicit retraining.
 - **Unrecognized** when nothing scores above 0.3 for 600 ms *and* the centre crop is salient
   (enough edge energy or contrast to be "a thing", not a blank wall).
 
-**Spatial anchors** (`recognition/SpatialPrior`). Each successful fire records the camera
-direction (azimuth and elevation from `TYPE_ROTATION_VECTOR`) as an anchor on that device. A
-device can collect several anchors: one from the couch, one from the bed. The score is a von
-Mises-style kernel around the nearest anchor (σ ≈ 10°). Indoor magnetometers are distorted, so
-we treat the prior as *soft* evidence and lean on it more when the image is dark. Anchors also
-feed the **device radar** in the HUD (DESIGN §5).
+**Spatial anchors** (`spatial/SpatialPrior`). Each successful fire records the camera
+direction as an anchor on that device. A device can collect several anchors: one from the
+couch, one from the bed. The score is a Gaussian kernel around the nearest anchor (σ ≈ 10°,
+widened when the heading is uncertain), weighted by how trustworthy the heading was when the
+anchor was recorded. Anchors can carry a room context (a hashed Wi-Fi BSSID) so identical
+monitors in two rooms don't steal each other's locks. They also feed the **device radar**.
+
+**Gyro-stabilised aim** (`spatial/OrientationFusion`). The obvious source, the
+magnetometer-referenced `TYPE_ROTATION_VECTOR`, is absolute but noisy, and it is bent badly by
+the magnets in speakers and soundbars, which is exactly where you aim. So:
+
+- Heading comes from `TYPE_GAME_ROTATION_VECTOR` (gyro and accelerometer): smooth and immune to
+  magnetic interference, but its yaw drifts slowly.
+- A yaw offset corrects that drift toward the absolute vector, a little per sample, and
+  **only while the field looks like the Earth's**: magnitude 22–70 µT, low jitter, accuracy at
+  least medium, and the phone not being flicked.
+- A **heading confidence** rises with trusted corrections and halves every 90 s without them.
+  It widens the anchor kernels, and the HUD shows it as a small compass beside the radar.
+- The gyroscope gives a **motion state** (still, steady, panning, flick, with hysteresis).
+  Flicks skip analysis frames (motion blur), and gallery exemplars are only captured when steady.
+- Camera elevation gives a **posture** (aiming, lowered, face up, face down) that drives lap
+  mode.
 
 **Low light, in order of preference:**
 
@@ -158,11 +175,10 @@ inside the HUD. There is no separate screen.
    table, so "SΛMSUNG" or a partly hidden logo still matches).
 3. **Model number** (optional): aim at the rating sticker or back label. OCR reads the model
    number, which often matches an exact file name in the IR database.
-4. **Cloud VLM** [OPEN] (opt-in, per use): send *only the reticle crop* to a multimodal model,
-   which returns `{category, brand, model_guess, confidence}` as JSON. This covers the long
-   tail. It is off by default, and the INTERNET path is isolated in its own module.
-5. **Manual fallback:** a searchable brand and category picker, reached by sliding a thumb
-   through a list with no precise taps.
+4. ~~Cloud VLM~~: declined (offline only, §0.5). The long tail is covered by typing the brand,
+   which goes to the Layer 3 lookup.
+5. **Manual fallback** (built): a category grid and a brand list filtered as you type, with
+   large rows and no precise taps.
 
 The output is a **ranked list of candidate code-set families** (§3.5) for the
 `(category, brand)` pair, with priors based on how common each family is.
@@ -253,16 +269,13 @@ toggle per `(device, protocol)`.
   climate encoder serialises it.
   - The HUD shows the shadow state as *assumed* (the device may have been changed with its own
     remote). A "resync" gesture re-sends it.
-  - **Licensing trap:** the best reference for AC protocols is IRremoteESP8266, which is
-    **LGPL-2.1**. Porting its code into this MIT app would make that module a derivative work.
-    [OPEN] Options:
-    - (a) Clean-room encoders from public protocol write-ups. Recommended for the top 5 AC
-      families in the user's market.
-    - (b) Keep a port in a separately licensed LGPL module.
-    - (c) v1 sends the Flipper database's AC state snapshots (off, cool, heat, dry presets)
-      only.
-
-    Proposal: (c) for M1–M3, then (a).
+  - **Licensing trap avoided:** the best reference for AC protocol *encoders*,
+    IRremoteESP8266, is LGPL-2.1. Instead we use **SmartIR** (MIT): its climate files hold
+    one Broadlink or Pronto code per `(mode, fan[, swing], temperature)` state, which is exactly
+    a shadow-state lookup table. `ClimateController` steps the state and picks the code, falling
+    back to the nearest temperature the table has. 24 profiles for the 12 most common brands are
+    bundled, and the rest are fetched on demand. Clean-room encoders remain an option for
+    brands SmartIR lacks.
 
 ### 3.3 Transmission layer
 
@@ -307,32 +320,41 @@ ControlIntent ─► CommandResolver ─► IrSignal ─► IrEngine (actor) ─
 
 | Source | What | License | Role |
 |---|---|---|---|
-| **Flipper-IRDB** (UberGuidoZ) | Thousands of `.ir` files by category, brand and model, both parsed and raw | **CC0-1.0**, but the README says *"Commits prior to 2319685 are not covered."* | **Primary.** [OPEN] We need a legal read on the older content (see §10) |
+| **Flipper-IRDB** (Lucaslhm; UberGuidoZ mirrors it) | 8,901 `.ir` files by category, brand and model, both parsed and raw | **CC0-1.0**, but the README says *"Commits prior to 2319685 are not covered."* Only 143 files were added after that commit | **Primary.** Bundled CC0-only by default; the rest is fetched on demand by the phone (Layer 3). [OPEN] §10 |
+| **SmartIR** (smartHomeHub) | Home Assistant code files: 356 AC state tables, fans, lights, TVs (Broadlink base64 / Pronto) | **MIT** | ACs (state tables), fans and lights; bundled with notice in `THIRD_PARTY_NOTICES.md` |
 | Flipper firmware "universal remote" assets | Curated power/volume/mute lists per category | GPL-3.0 (firmware repository) | Reference only. **Not bundled** |
 | probonopd/irdb | `protocol, device, subdevice, function` CSVs by manufacturer | Custom "irdb License" (allows inclusion with conditions) | Secondary, for structured function names |
 | IRremoteESP8266 | AC protocol encoders | LGPL-2.1 | Reference, see §3.2 |
 | IRP notation / IrpTransmogrifier | Formal protocol definitions | Check before use | Generator reference |
-| Our own starter library | Hand-written codes for the most common TV families | MIT (ours) | Ships in the scaffold for M1 testing |
+| Our own starter library | Hand-written codes for the most common TV families | MIT (ours) | Ranked first for Samsung, LG and Sony TVs |
 
-### 3.5 Ingestion and matching (`:tools:irdb-compiler`, planned)
+### 3.5 Ingestion and matching (`:tools:irdb-compiler`)
 
-A JVM command-line tool runs offline or in CI and turns a **pinned IRDB commit** into a
-compact, versioned asset:
+A JVM command-line tool (`tools/irdb-compiler/generate-catalog.sh`) turns **pinned upstream
+revisions** into a compact, versioned asset:
 
-1. **Parse** every `.ir` file (`:core:irdb` → `FlipperIrParser`, in the scaffold).
-2. **Decode raw to parsed** where possible (a decoder lives in `:core:ir`, planned). This
-   removes duplicates, shrinks the asset and gives raw captures a protocol identity.
+1. **Parse** every `.ir` file (`FlipperIrParser`) and every SmartIR JSON (`SmartIr`, decoding
+   Broadlink base64 with `BroadlinkCodec` or Pronto hex with `ProntoCodec`).
+2. **Licence policy:** `POLICY=cc0-only` (the default) drops IRDB paths that already existed
+   at the relicensing commit; `POLICY=all` keeps everything.
 3. **Normalise button names** into a semantic `Command` vocabulary (`CommandVocabulary`, in the
    scaffold). For example `Power`, `PWR`, `power_toggle` → `POWER`; `Vol_up`, `VOL+`,
    `volume_up` → `VOLUME_UP`. Unknown names are kept as `Custom("…")` so the long tail
    survives.
 4. **Category and brand from the path:** `TVs/Samsung/…` → `(TV, "Samsung")`, with brand
    aliases canonicalised.
-5. **Code-set families:** two files belong to the same family when their `(protocol, address)`
-   sets and their POWER/VOLUME codes match. Families are ranked per brand by how many files
-   share them (a popularity proxy). In practice, most brands collapse to a handful of families.
-6. **Emit** a read-only SQLite asset (FTS for brand search) or CBOR. It ships inside the APK
-   (estimated a few MB) and can be updated as a delta later.
+5. **Code-set families** (`CodesetFamilies`): files whose primary code (POWER, else the next
+   core button) matches are one family, since captures of the same remote differ in which extra
+   buttons they recorded. Families are ranked per brand by size (a popularity proxy). Ranks are
+   then merged per brand across sources: our verified starters first, IRDB families, then
+   SmartIR.
+6. **Emit** `core/data/src/main/assets/catalog/fancyir-catalog.tsv.gzip` (a streaming
+   tab-separated bundle, `CatalogBundle`) and `catalog.properties` (revision, counts).
+
+| Policy | Code sets | Commands | Asset | TV brands |
+|---|---|---|---|---|
+| `cc0-only` (shipped) | 119 | 7,111 | 468 KB | 17 + 3 starters |
+| `all` | 873 | 19,140 | 897 KB | 117 |
 
 At runtime: `(category, brand)` gives families in prior order, then Probe & Watch, then a
 pinned device with a `Map<Command, IrCode>`.
@@ -357,6 +379,37 @@ whose IR-cut filter leaks at 940 nm (often the front or ultra-wide camera), a fe
 Risks: IR-cut filters, gaps during vertical blanking, and Camera2 manual-exposure support. It
 is a spike, not a promise.
 
+### 3.8 The 3-layer hybrid storage engine (`:core:data`)
+
+One Room database (schema in `core/data/schemas/`) backs three layers, so first-time setup
+works offline for common brands, niche brands still work, and daily firing never waits on
+anything:
+
+```
+ Layer 1  SpatialVault       vault_devices · vault_commands · vault_embeddings · vault_anchors · climate_states
+          (your devices)     every command pre-compiled to varint transmit buffers (+ RC5/RC6 toggle twin);
+                             load() restores devices, gallery and anchors into memory at start-up
+              ▲ promote(codeset) after recon confirms it
+ Layer 2  CatalogRepository  catalog_codesets(category, brandKey, rank) · catalog_commands
+          (offline catalog)  bundled asset streamed in once per revision; remote finds cached after
+              ▲ cacheRemote()   the bundled ranks and kept across re-seeds
+ Layer 3  HybridIrStore      FlipperIrdbRemote (GitHub contents API + raw.githubusercontent.com)
+          (on demand)        SmartIrRemote (docs index tables → code files)
+          settings           typed app variables: emitter profile, remote lookup, hints, heading offset
+```
+
+- **Fire path (Layer 1):** lock-on finds a `Device` already in memory, and its
+  `compiled[function]` buffer goes straight into the transmit queue. Encoding an NEC frame
+  only takes microseconds anyway; the real saving is skipping parsing and database access, so
+  the first fire after a cold start is as fast as the hundredth.
+- **First-time recon (Layer 2 → 3):** `(category, brand)` gives code sets in rank order, and
+  `ReconSession` probes them. If the brand is unknown locally, or nothing reacted and you tap
+  *Try online*, the GitHub sources are queried. New code sets are cached permanently, so the
+  next lookup is offline. The anonymous GitHub API allows 60 requests per hour; files come
+  from raw.githubusercontent.com, which doesn't count against that.
+- **Promotion:** the confirmed code set is copied into the vault with every command
+  compiled. Gallery painting and the first spatial anchor follow immediately.
+
 ---
 
 ## 4. Android architecture
@@ -373,8 +426,9 @@ is a spike, not a promise.
 | ML (M2+) | LiteRT with the GPU/NPU delegate; ML Kit Text Recognition v2 (bundled) | On-device |
 | Concurrency | Coroutines/Flow; dedicated single-thread dispatchers for IR and analysis | |
 | DI | **Manual `AppGraph`** for now | No annotation processing, fast builds, explicit wiring. Revisit (Metro or Hilt) past about 30 bindings |
-| Persistence (M2) | Room (devices, gallery exemplars as fp16 BLOBs, anchors, code bindings) plus DataStore (settings); the IRDB asset as a separate read-only DB | |
-| minSdk / target | **33** / **36** [OPEN] | AGSL and modern haptics without fallbacks. Every camera-plateau IR phone ships Android 14 or later |
+| Persistence | Room **2.8.5** via KSP **2.3.12**: the 3-layer store (§3.8) and settings in one database; schema exported and checked in | One schema, one migration path; settings beside the data they configure |
+| minSdk / target | **33** / **36** | AGSL and modern haptics without fallbacks. Every camera-plateau IR phone ships Android 14 or later |
+| Distribution | **Sideload only** [DECISION]: the APK from CI (`fancy-ir-debug-apk` artifact) or a locally built one | No store policy constraints. `uses-feature consumerir` stays as documentation; it doesn't block sideloading |
 
 ### 4.2 Modules
 
@@ -386,13 +440,13 @@ is a spike, not a promise.
 :core:vision              CameraX session, frame-rate policy, YUV → tile sampler, analyzer
 :core:transmitter         ConsumerIrManager adapter (only class that touches it)
 :core:haptics             Vibrator adapter: primitives, IR-texture waveforms
-:core:sensors             Rotation-vector → aim direction (azimuth / elevation / roll)
-:core:data                (M2) Room + DataStore repositories
+:core:sensors             Sensor hub → OrientationFusion (aim, heading confidence, motion, posture); phone identity
+:core:data                Room: Layer 1 vault, Layer 2 catalog + bundled asset, Layer 3 lookup, settings
 :core:domain   (JVM)      Devices, control profiles, gesture arbiter, targeting machine,
                           recognition maths, spatial prior, probe planner
-:core:irdb     (JVM)      Flipper .ir parser, Command vocabulary, catalog paths
-:core:ir       (JVM)      Signals, protocol encoders, pattern sanitiser, IrEngine actor
-:tools:irdb-compiler (JVM, M3)  Offline IRDB → asset compiler
+:core:irdb     (JVM)      Flipper .ir and SmartIR parsers, Command vocabulary, catalog model and bundle, GitHub fetchers
+:core:ir       (JVM)      Signals, protocol encoders, Pronto/Broadlink decoders, compiled commands, IrEngine actor
+:tools:irdb-compiler (JVM)      Pinned IRDB + SmartIR → bundled catalog asset
 :benchmark                (M4) Macrobenchmark: frame timing, startup, baseline profile
 ```
 
@@ -415,7 +469,7 @@ is a spike, not a promise.
                                               ▲      │
  Analysis thread: ImageProxy → TileSampler →  │      └─ effects ─► IrEngine (IR thread) ─► FireEvent
    BaselineFingerprinter → FrameObservation ──┘                 └► HapticEngine
- Sensor thread: rotation vector → AimDirection ───────────────────┘
+ Sensor thread: game RV + RV + gyro + mag → OrientationFusion → AimState ┘
 ```
 
 - **The analyzer never blocks the camera.** The YUV tile is sampled straight from the plane
@@ -464,7 +518,7 @@ is a spike, not a promise.
 | `CAMERA` | runtime | first launch (Wand mode works without it) |
 | `VIBRATE` | normal | always |
 | `RECORD_AUDIO` | runtime | only if the user opts into beep detection during onboarding |
-| `INTERNET` | normal | only in the flavor that includes cloud identify [OPEN] |
+| `INTERNET` | normal | Layer 3 lookups during first-time setup only; can be switched off with the `catalog.remoteLookup` setting |
 
 ---
 
@@ -484,15 +538,24 @@ is a spike, not a promise.
 
 ## 6. Testing strategy
 
-- **JVM unit tests** (in the scaffold) for:
-  - Encoder golden structure and round-trip decoding (via a reference decoder in tests).
-  - Parser edge cases.
+- **JVM unit tests** (113 today) for:
+  - Encoder golden structure and round-trip decoding (via a reference decoder in tests);
+    Pronto and Broadlink decoding against real SmartIR packets; compiled commands.
+  - Flipper and SmartIR parser edge cases, catalog bundle round-trips, family ranking, and the
+    GitHub fetchers against canned API responses.
   - The gesture arbiter driven by synthetic pointer traces.
   - The targeting machine driven by synthetic score streams.
-  - Probe-planner convergence.
+  - Orientation fusion under magnetic disturbance, motion classes, posture, and room-tagged anchors.
+  - Probe-planner and recon convergence; climate state stepping; emitter matching and parallax.
+- **Robolectric tests** for the Room layers: seeding and re-seeding, rank order, remote
+  caching, vault round-trips, and seeding the real shipped catalog asset.
 - **Instrumented tests** on a real IR phone for transmitter capabilities and pattern
   acceptance.
-- **Hardware loop:** a Flipper Zero or ESP32+TSOP receiver as an oracle for every encoder.
+- **Hardware loop:** a microcontroller IR receiver as the oracle for every encoder. The
+  in-app **IR test bench** (My Phone sheet) fires nine reference frames whose expected
+  decoder words are in [`docs/testing/ir-verification.md`](docs/testing/ir-verification.md).
+  `IrTestBenchTest` keeps that table honest against the encoders, and `StarterLibraryTest`
+  pins the starter TV sets to the canonical decoder words.
 - **Macrobenchmark** for startup and HUD frame timing, enforced in CI from M4.
 
 ---
@@ -501,16 +564,16 @@ is a spike, not a promise.
 
 | Milestone | Scope | Exit criterion |
 |---|---|---|
-| **M0 Scaffold** *(this commit series)* | Docs, build, pure core with tests, transmitter, viewfinder and HUD walking skeleton, manual device pick from the starter library | CI green, the app fires real codes on the device |
-| **M1 Blaster** | Full gesture grammar, radial deck, haptic language, beam shader, volume keys, NAV layer | Control a TV without looking at the phone |
-| **M2 Gallery** | Room, pin-a-device, baseline then LiteRT fingerprints, spatial anchors, sticky lock, lap mode | Your devices recognised in <300 ms, including at night via priors |
-| **M3 Identify** | IRDB compiler, brand OCR, Probe & Watch, Flipper import, self-healing code sets | New device controllable in <20 s |
+| **M0 Scaffold** ✅ | Docs, build, pure core with tests, transmitter, viewfinder and HUD walking skeleton | CI green |
+| **M1 Blaster** ✅ (needs device testing) | Full gesture grammar, radial deck, haptic language, beam shader, volume keys, NAV layer | Control a TV without looking at the phone |
+| **M2 Gallery** 🟡 | ✅ Room 3-layer store, pin-a-device, persisted baseline gallery and anchors, gyro-stabilised heading, sticky lock, lap mode · ⏳ LiteRT fingerprints | Your devices recognised in <300 ms, including at night via priors |
+| **M3 Identify** 🟡 | ✅ IRDB compiler, bundled catalog, GitHub fallback, recon with swipe confirmation, SmartIR ACs · ⏳ brand OCR, camera/mic auto-watch, Flipper import, self-healing | New device controllable in <20 s |
 | **M4 Polish** | Shader suite, sound design, baseline profile, benchmarks in CI, accessibility pass | Frame and startup budgets met |
 | **M5 Lab** | Sweep fire, knob twist, scenes, QS tile, optical learning spike, AC encoders | — |
 
 ---
 
-## 8. Key interfaces (scaffold)
+## 8. Key interfaces
 
 ```kotlin
 // :core:ir
@@ -527,6 +590,14 @@ class GestureArbiter(config: GestureConfig) { fun onInput(input: PointerInput): 
 class TargetingMachine(config: TargetingConfig) { fun onObservation(obs: TargetObservation): TargetingState }
 interface Fingerprinter { fun fingerprint(tile: LumaChromaTile): FloatArray }
 class ProbePlanner(candidates: List<Candidate>, probes: List<Probe>) { fun nextProbe(): Probe?; fun observe(probe: Probe, reacted: Boolean) }
+class OrientationFusion { fun onGameRotation(m, t); fun onAbsoluteRotation(m, t); fun onGyroscope(x, y, z, t); val state: AimState }
+object EmitterMatcher { fun match(identity: DeviceIdentity): EmitterMatch? }
+class ReconSession(candidates: List<CatalogCodeset>) { fun next(): Step; fun answer(probe: Probe, reacted: Boolean) }
+
+// :core:data
+class SpatialVault(db: FancyIrDatabase) : DeviceRepository { suspend fun load(): VaultSnapshot; suspend fun promote(codeset: CatalogCodeset, label: String, roomContext: String?): Device }
+class CatalogRepository(db: FancyIrDatabase, settings: SettingsStore) { suspend fun ensureSeeded(asset: CatalogAsset): Int; suspend fun candidates(category: DeviceCategory, brand: String): List<CatalogCodeset> }
+class HybridIrStore(catalog: CatalogRepository, remotes: List<RemoteCodesetSource>, settings: SettingsStore) { suspend fun candidates(category: DeviceCategory, brand: String): CandidateLookup }
 ```
 
 ---
@@ -535,27 +606,32 @@ class ProbePlanner(candidates: List<Candidate>, probes: List<Probe>) { fun nextP
 
 - Frames are processed in memory and never written to disk, except **gallery exemplars**,
   which are *embeddings*, not images. A debug flag can store crops locally.
-- Cloud identify sends only the reticle crop, only when the user asks, and shows exactly what
-  is sent.
+- Nothing visual is ever uploaded. Layer 3 lookups send only the category folder and brand
+  name to GitHub, and the `catalog.remoteLookup` setting turns them off.
 - No analytics SDKs. Local-only latency telemetry for the debug HUD.
 
 ---
 
-## 10. Open questions for the product owner
+## 10. Decisions and open questions
 
-1. **Your exact phone model(s)?** Only one placement has been verified so far (OnePlus 15).
-   We'll build the `EmitterGeometry` table around what you actually hold.
-2. **Your devices:** brand and model of the TV, AC, fan, soundbar and monitor in your room.
-   They become the M1 starter code sets and the M2 recognition test set.
-3. **Do you own a Flipper Zero?** It would be our ground-truth IR receiver for encoder
-   verification.
-4. **Cloud VLM identify:** allowed, as an opt-in flavor with INTERNET? Or strictly offline
-   forever?
-5. **AC strategy:** snapshot codes now and clean-room encoders later (recommended), or an
-   isolated LGPL port?
-6. **IRDB legal posture:** ship only CC0-covered content, or treat IR codes as uncopyrightable
-   facts? (Get advice; the default is CC0-only.)
-7. **Distribution:** Play Store (which drives target SDK, `uses-feature` filtering and policy
-   for camera/mic use) or sideload/F-Droid?
-8. **minSdk 33:** fine, or do you also want to support older top-edge IR phones (Wand mode
-   only)?
+**Decided with the product owner (October 2026):**
+
+| Topic | Decision |
+|---|---|
+| Phone | **Xiaomi 14**: emitter in the bottom-right ring of the island, ≈22 mm right of the main lens (back view). Matched by device name, model codes `23127PN0CC`/`23127PN0CG` or codename `houji` |
+| Test device | **2014 Samsung TV**: Samsung32, address 0x07; the starter set ranks first and carries discrete power, digits and navigation |
+| Encoder verification | The owner's microcontroller IR receiver, with the in-app test bench (§6) |
+| Cloud vision | **Declined**: offline only (§0.5) |
+| AC strategy | Stay within the 3-layer plan: SmartIR state tables through Layers 2 and 3, no encoder ports for now |
+| Distribution | **Sideload only** (§4.1) |
+| TAP on TVs | **MUTE**: it works on every input, while PLAY/PAUSE only works in smart-TV apps |
+
+**Still open:**
+
+1. **IRDB licence policy:** the bundle is CC0-only (119 code sets). `POLICY=all` would bundle
+   873 code sets (117 TV brands) in 897 KB. With sideload-only distribution the exposure is
+   smaller, but it is still redistribution. Keep relying on Layer 3 for those, or bundle them?
+2. **Room context:** tagging anchors with the Wi-Fi BSSID needs the location permission on
+   Android. Worth asking for, or are compass anchors enough for one room?
+3. **Which decoder runs on your microcontroller?** IRremoteESP8266 prints the words in
+   docs/testing as-is; Arduino-IRremote reports address and command instead (also listed).

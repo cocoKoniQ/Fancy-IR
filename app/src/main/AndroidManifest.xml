@@ -6,6 +6,9 @@
         android:name="android.hardware.consumerir"
         android:required="true" />
 
+    <!-- Layer 3 only: on-demand lookups in GitHub-hosted IR databases during first-time setup. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:name=".FancyIrApplication"
         android:allowBackup="true"

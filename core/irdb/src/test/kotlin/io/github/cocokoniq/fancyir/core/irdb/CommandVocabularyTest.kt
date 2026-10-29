@@ -8,7 +8,7 @@ class CommandVocabularyTest {
 
     @Test
     fun `common spellings normalise to the same command`() {
-        val cases = mapOf(
+        val cases = listOf(
             Command.POWER to listOf("Power", "POWER", "Pwr", "power_toggle", "On/Off"),
             Command.VOLUME_UP to listOf("Vol_up", "VOL+", "Volume Up", "vol-up", "Volume_Up_2"),
             Command.VOLUME_DOWN to listOf("Vol_dn", "VOL-", "Volume_Down", "vol -"),
@@ -21,6 +21,10 @@ class CommandVocabularyTest {
             Command.TEMP_UP to listOf("Temp_up", "TEMP+", "Temperature Up"),
             Command.DIGIT_7 to listOf("7", "Num_7", "KEY_7"),
             Command.OSCILLATE to listOf("Oscillate", "Rotate", "OSC"),
+            Command.CHANNEL_UP to listOf("CHANNELUP", "nextChannel"),
+            Command.CHANNEL_DOWN to listOf("CHANNELDOWN", "previousChannel"),
+            Command.VOLUME_UP to listOf("volumeUp"),
+            Command.LEFT to listOf("LEFT_ARROW"),
         )
         for ((expected, names) in cases) {
             for (name in names) assertEquals(expected, CommandVocabulary.normalize(name), "'$name'")

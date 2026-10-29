@@ -1,8 +1,11 @@
 package io.github.cocokoniq.fancyir.core.vision
 
 import android.content.Context
+import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.TotalCaptureResult
 import android.os.SystemClock
 import android.util.Range
 import android.util.Size
@@ -20,6 +23,7 @@ import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.lifecycle.LifecycleOwner
 import com.google.common.util.concurrent.ListenableFuture
+import io.github.cocokoniq.fancyir.core.domain.hardware.Parallax
 import io.github.cocokoniq.fancyir.core.domain.recognition.Fingerprinter
 import io.github.cocokoniq.fancyir.core.domain.recognition.LumaChromaTile
 import kotlinx.coroutines.awaitCancellation
@@ -35,6 +39,9 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.math.PI
+import kotlin.math.atan
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /** One analysed frame: the reticle fingerprint plus the scene statistics the HUD needs. */
@@ -71,6 +78,16 @@ class ViewfinderController(
     )
     val frames: SharedFlow<FrameObservation> = _frames.asSharedFlow()
 
+    private val _focusDistanceM = MutableStateFlow<Float?>(null)
+
+    /** Autofocus distance to the subject, in 5 cm steps; null when unknown or beyond 2 m. */
+    val focusDistanceM: StateFlow<Float?> = _focusDistanceM.asStateFlow()
+
+    /** Horizontal field of view of the portrait preview, from the lens and sensor size. */
+    @Volatile
+    var horizontalFovDeg: Float = DEFAULT_HFOV_DEG
+        private set
+
     private val analysisExecutor = Executors.newSingleThreadExecutor { Thread(it, "fancyir-analysis") }
     private val sampler = TileSampler()
 
@@ -81,6 +98,8 @@ class ViewfinderController(
 
         val previewBuilder = Preview.Builder()
         preferredFpsRange(provider, selector)?.let { range -> applyFpsRange(previewBuilder, range) }
+        portraitFieldOfView(provider, selector)?.let { horizontalFovDeg = it }
+        observeFocusDistance(previewBuilder)
         val preview = previewBuilder.build().apply {
             setSurfaceProvider { request -> _surfaceRequest.value = request }
         }
@@ -149,8 +168,31 @@ class ViewfinderController(
         Camera2Interop.Extender(builder).setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, range)
     }
 
+    /** Portrait: the sensor's short side runs across the screen. */
+    @OptIn(ExperimentalCamera2Interop::class)
+    private fun portraitFieldOfView(provider: ProcessCameraProvider, selector: CameraSelector): Float? {
+        val info = selector.filter(provider.availableCameraInfos).firstOrNull() ?: return null
+        val characteristics = Camera2CameraInfo.from(info)
+        val focal = characteristics.getCameraCharacteristic(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.firstOrNull() ?: return null
+        val sensor = characteristics.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE) ?: return null
+        if (focal <= 0f) return null
+        return (2 * atan(minOf(sensor.width, sensor.height) / (2 * focal)) * 180 / PI).toFloat()
+    }
+
+    @OptIn(ExperimentalCamera2Interop::class)
+    private fun observeFocusDistance(builder: Preview.Builder) {
+        Camera2Interop.Extender(builder).setSessionCaptureCallback(object : CameraCaptureSession.CaptureCallback() {
+            override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+                val diopters = result.get(CaptureResult.LENS_FOCUS_DISTANCE) ?: return
+                val distance = Parallax.distanceFromDiopters(diopters)?.takeIf { it < 2f }
+                _focusDistanceM.value = distance?.let { (it * 20).roundToInt() / 20f }
+            }
+        })
+    }
+
     private companion object {
         const val SALIENT_CONTRAST = 0.06f
+        const val DEFAULT_HFOV_DEG = 66f
     }
 }
 

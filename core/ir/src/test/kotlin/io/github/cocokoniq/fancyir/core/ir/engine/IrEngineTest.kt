@@ -1,5 +1,6 @@
 package io.github.cocokoniq.fancyir.core.ir.engine
 
+import io.github.cocokoniq.fancyir.core.ir.CompiledCommand
 import io.github.cocokoniq.fancyir.core.ir.IrCode
 import io.github.cocokoniq.fancyir.core.ir.IrProtocol
 import io.github.cocokoniq.fancyir.core.ir.ProtocolEncoders
@@ -107,5 +108,19 @@ class IrEngineTest {
 
         assertIs<FireOutcome.Failed>(outcomes.first())
         assertEquals(1, tx.sent.size)
+    }
+
+    @Test
+    fun `precompiled commands fire without encoding and keep toggling`() = runTest {
+        val tx = RecordingIrTransmitter()
+        val engine = engine(tx)
+        val rc5 = IrCode.Parsed(IrProtocol.RC5, 0x00, 0x10)
+        val compiled = CompiledCommand.compile(rc5)
+
+        engine.fire(request(rc5).copy(compiled = compiled, presses = 2))
+        runCurrent()
+
+        val expected = compiled.render(2) { it == 1 }.dropLast(1)
+        assertEquals(expected, tx.sent.single().timingsUs.toList())
     }
 }

@@ -11,6 +11,8 @@ class Codeset(
 
     operator fun contains(command: Command): Boolean = command in codes
 
+    fun getValue(command: Command): IrCode = codes.getValue(command)
+
     /** The first command of [chain] this device supports, e.g. `[PLAY_PAUSE, PLAY]`. */
     fun firstAvailable(chain: List<Command>): Pair<Command, IrCode>? =
         chain.firstNotNullOfOrNull { command -> codes[command]?.let { command to it } }

@@ -16,15 +16,15 @@ object CommandVocabulary {
         alias(Command.VOLUME_UP, "vol_up", "volume_up", "vol_plus", "volume_plus", "volup", "vol_inc", "v_plus")
         alias(Command.VOLUME_DOWN, "vol_dn", "vol_down", "volume_down", "vol_minus", "volume_minus", "voldown", "vol_dwn", "vol_dec", "v_minus")
         alias(Command.MUTE, "mute", "muting", "mute_toggle")
-        alias(Command.CHANNEL_UP, "ch_up", "ch_next", "channel_up", "ch_plus", "chup", "channel_plus", "prog_plus", "p_plus", "chan_up")
-        alias(Command.CHANNEL_DOWN, "ch_dn", "ch_down", "ch_prev", "channel_down", "ch_minus", "chdown", "channel_minus", "prog_minus", "p_minus", "chan_down")
+        alias(Command.CHANNEL_UP, "ch_up", "ch_next", "channel_up", "ch_plus", "chup", "channel_plus", "prog_plus", "p_plus", "chan_up", "channelup", "next_channel")
+        alias(Command.CHANNEL_DOWN, "ch_dn", "ch_down", "ch_prev", "channel_down", "ch_minus", "chdown", "channel_minus", "prog_minus", "p_minus", "chan_down", "channeldown", "previous_channel", "prev_channel")
         alias(Command.INPUT, "input", "source", "src", "input_select", "inputs", "av", "tv_av", "input_source")
-        alias(Command.UP, "up", "cursor_up", "arrow_up", "nav_up", "dpad_up")
-        alias(Command.DOWN, "down", "cursor_down", "arrow_down", "nav_down", "dpad_down", "dn")
-        alias(Command.LEFT, "left", "cursor_left", "arrow_left", "nav_left", "dpad_left")
-        alias(Command.RIGHT, "right", "cursor_right", "arrow_right", "nav_right", "dpad_right")
+        alias(Command.UP, "up", "cursor_up", "arrow_up", "nav_up", "dpad_up", "up_arrow")
+        alias(Command.DOWN, "down", "cursor_down", "arrow_down", "nav_down", "dpad_down", "dn", "dn_arrow", "down_arrow")
+        alias(Command.LEFT, "left", "cursor_left", "arrow_left", "nav_left", "dpad_left", "left_arrow")
+        alias(Command.RIGHT, "right", "cursor_right", "arrow_right", "nav_right", "dpad_right", "right_arrow")
         alias(Command.OK, "ok", "enter", "select", "confirm", "center", "ok_enter")
-        alias(Command.BACK, "back", "return", "rtn", "ret")
+        alias(Command.BACK, "back", "return", "rtn", "ret", "recall", "last")
         alias(Command.HOME, "home", "smart_hub", "smarthub")
         alias(Command.MENU, "menu", "settings", "setup", "tools")
         alias(Command.INFO, "info", "display", "disp", "osd")
@@ -36,7 +36,7 @@ object CommandVocabulary {
         alias(Command.STOP, "stop")
         alias(Command.NEXT, "next", "skip_next", "skip_fwd", "next_track")
         alias(Command.PREVIOUS, "prev", "previous", "skip_prev", "skip_back", "prev_track")
-        alias(Command.FAST_FORWARD, "ff", "fast_forward", "fwd", "forward")
+        alias(Command.FAST_FORWARD, "ff", "fast_forward", "fwd", "forward", "ffwd", "fastforward")
         alias(Command.REWIND, "rew", "rewind", "rw", "fr")
         alias(Command.SUBTITLES, "subtitle", "subtitles", "sub", "subt", "cc", "caption")
         alias(Command.SLEEP, "sleep", "sleep_timer")
@@ -83,9 +83,14 @@ object CommandVocabulary {
         }
     }
 
-    /** "VOL+" → "vol_plus", "Ch-" → "ch_minus", "Vol-Up" → "vol_up", "Play/Pause" → "play_pause". */
+    /**
+     * "VOL+" → "vol_plus", "Ch-" → "ch_minus", "Vol-Up" → "vol_up", "Play/Pause" → "play_pause",
+     * "volumeUp" → "volume_up" (SmartIR's camelCase).
+     */
     internal fun canonicalKey(name: String): String =
-        name.trim().lowercase()
+        name.trim()
+            .replace(Regex("([a-z0-9])([A-Z])"), "$1_$2")
+            .lowercase()
             .replace("+", " plus ")
             .replace(Regex("-(?![a-z])"), " minus ")
             .replace(Regex("[^a-z0-9]+"), "_")

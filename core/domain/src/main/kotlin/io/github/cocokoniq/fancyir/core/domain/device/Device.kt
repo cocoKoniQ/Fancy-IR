@@ -1,7 +1,9 @@
 package io.github.cocokoniq.fancyir.core.domain.device
 
+import io.github.cocokoniq.fancyir.core.ir.CompiledCommand
 import io.github.cocokoniq.fancyir.core.irdb.Codeset
 import io.github.cocokoniq.fancyir.core.irdb.DeviceCategory
+import io.github.cocokoniq.fancyir.core.irdb.catalog.ClimateSpec
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,6 +19,12 @@ data class Device(
     val category: DeviceCategory,
     val brand: String,
     val codeset: Codeset,
+    /** Pre-rendered transmit buffers keyed by `FunctionKey` — the Layer 1 fire path. */
+    val compiled: Map<String, CompiledCommand> = emptyMap(),
+    /** Present for state-table ACs; their codes live under `climate:` function keys. */
+    val climate: ClimateSpec? = null,
+    /** The Layer 2 code set this device was promoted from. */
+    val codesetId: String? = null,
 )
 
 interface DeviceRepository {

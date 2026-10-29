@@ -27,10 +27,11 @@ class IrCodeTest {
     @Test
     fun `hold uses the repeat frame after the first frame`() {
         val signal = ProtocolEncoders.encode(IrProtocol.NEC, 0x04, 0x02)
+        val repeat = checkNotNull(signal.repeatFrame)
 
         val held = signal.hold(3)
 
-        assertEquals(signal.frame.size + 2 * signal.repeatFrame!!.size, held.size)
-        assertContentEquals(signal.repeatFrame, held.copyOfRange(held.size - signal.repeatFrame!!.size, held.size))
+        assertEquals(signal.frame.size + 2 * repeat.size, held.size)
+        assertContentEquals(repeat, held.copyOfRange(held.size - repeat.size, held.size))
     }
 }

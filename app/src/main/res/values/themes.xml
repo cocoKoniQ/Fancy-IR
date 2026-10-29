@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- HUD black from the first frame: no white flash, no logo animation (DESIGN.md §2.1). -->
+    <style name="Theme.FancyIr" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/hud_black</item>
+        <item name="android:windowSplashScreenBackground">@color/hud_black</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_reticle</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/hud_black</item>
+    </style>
+</resources>

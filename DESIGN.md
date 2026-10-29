@@ -2,7 +2,7 @@
 
 > Companion to [`ARCHITECTURE.md`](ARCHITECTURE.md). This document is the *feel*: what is on
 > screen at every moment, what your thumb does, and what your hand feels.
-> Status: **v0 proposal** (October 2026).
+> Status: **v0.2** (October 2026); items marked ✅ in §5 are built.
 
 ---
 
@@ -126,10 +126,29 @@ The beam travels **away from you, into the scene**, so the visual converges on t
 - Haptic: a single soft `LOW_TICK` on entry, never repeated (no nagging).
 - **Hold** starts Identify in the HUD (§2.6). **Swipe up** opens the manual picker.
 
-### 2.6 Identifying (onboarding inside the HUD)
+### 2.6 Adding a device: recon (built) and identifying (target)
 
-There is no wizard screen. The viewfinder stays live and the steps narrate in small mono text
-under the reticle, like a terminal:
+**Built today (v0.2).** Adding a device never leaves the viewfinder:
+
+1. **Hold ▼ DEVICES** (or tap *Add a device* on the first-run card): a bottom sheet with your
+   devices on top and colour-coded category tiles below (TV, AC, fan, soundbar, receiver,
+   projector, monitor, light, streamer, speaker).
+2. **Pick the brand:** popular brands from the offline catalog, filtered as you type. A brand
+   that isn't listed becomes "Look up '…' online", which searches the GitHub IR databases
+   (Layer 3).
+3. **Recon panel** (thumb zone, the reticle turns infrared): `PROBE 2 · MUTE · DID IT REACT?`
+   with **NOTHING / IT REACTED**, plus *Fire again*, *Skip test* and *Cancel*. You can also
+   **swipe right for "it reacted", left for "nothing", tap to fire again**, so you never look
+   away from the device. Probe dots fill as the planner narrows the code sets down; POWER is
+   never used as a probe.
+4. **Peak:** when a code set is confirmed, a springy ✓ and `14 COMMANDS READY · LEARNING ITS
+   LOOK`. The device is pinned, locked and painted into the gallery in one go, so the next aim
+   locks it visually.
+5. **If nothing reacts:** *Try online* fetches more code sets (newcomers only); if that fails
+   too, the panel says what to check (aim, range) instead of failing silently.
+
+**Target (M3):** the same panel, with the category and brand filled in automatically and the
+camera and mic watching for the reaction:
 
 ```
 CATEGORY   TV ............................ 0.92
@@ -155,8 +174,9 @@ LOCK-IN    hold steady — painting ◔
   - The label shows `PREDICTED`.
   - The confidence arc is hollow.
   - Everything still works. The style just says "I'm inferring this".
-- **Lap mode:** when the phone tilts more than 50° downward (onto your lap), or lies flat:
-  - The camera analysis pauses and the viewfinder dims to 10%.
+- **Lap mode** (built; from the fused posture): when the camera axis points more than about
+  50° down (onto your lap), or the phone lies flat or face-down:
+  - The camera analysis pauses and the viewfinder dims to 25%. A `LAP MODE` capsule appears.
   - The HUD collapses to a minimal **status capsule**: device name and last command.
   - The lock persists for 8 s after the last command, and indefinitely while you keep using
     it.
@@ -166,6 +186,23 @@ LOCK-IN    hold steady — painting ◔
   - The radar ribbon grows to fill the top third of the screen.
   - The device closest to your pointing direction is "locked" by the spatial prior alone.
   - The gestures are identical.
+
+### 2.7a My phone (where the beam comes from)
+
+Hold ▶ MY PHONE (or *Where is my IR blaster?* on the first-run card) opens a sheet with a
+drawing of the back of this phone. The camera island is top-left, and the IR emitter is placed
+by its offset from the main lens, from the hardware spec. When the spec only gives a
+distance, a dashed ring shows the range. The sheet shows the island layout, the position in
+words and the offset, and lets you pick the right phone if automatic matching guessed wrong.
+
+**Point-blank beam marker:** below 0.5 m (from autofocus), the 14–28 mm offset is visible, so
+a small infrared ring marks where the beam really lands, labelled `BEAM · 18 cm`. Beyond that
+the reticle centre *is* the beam centre and the marker disappears.
+
+**Heading compass:** a small rose left of the radar fills with heading confidence. It is green
+when the magnetometer agrees with the gyro, amber when it's drifting, and dim when uncorrected
+(for example next to a soundbar's magnets). It explains, without words, why a blind lock may be
+less sure.
 
 ### 2.8 Unavailable
 
@@ -295,13 +332,27 @@ Numbers, subtitles, sleep timer, picture mode: they still need a home.
 | `hud.night` | `#B3122E` | night palette: all HUD ink collapses to this |
 | `hud.scrim` | `#000000` @ 35% | label backplates |
 
+**60/30/10.** The camera image and dark surfaces (`Surface #0E1113`, `SurfaceRaised
+#161B1E`) are the 60. Ink and its 80/60/50 % opacities for hierarchy are the 30. **Signal is
+the 10**: locks, the one primary button per panel, success. Infrared is reserved for emission
+and POWER, and amber for unknown and assumed states. Category tiles use soft 12 % tints of a
+small family of hues so they scan as a rhythm, not a rainbow.
+
 **State is never shown by colour alone.** Lock is *solid* brackets, unknown is *dashed*,
 predicted is *dotted*. That keeps the HUD safe for colour-blind users.
 
 ### 4.2 Type
 
-- **Monospace caps**, letter-spacing +6%. Sizes: 11 sp for captions, 13 sp for status, 16 sp
-  for device names.
+- **Four sizes, two weights, two families** (`HudType`): 11 sp caption and 13 sp status in
+  monospace caps for instrument data; 13 sp body and 16 sp medium titles in the system sans for
+  names and sentences; one 28 sp mono *display* size for the single big number (an AC
+  set-point, a category glyph).
+- **Spacing** (`HudSpace`) is an 8-point grid with 4 dp for fine steps (4, 8, 12, 16, 24, 32,
+  48). Related items sit closer than unrelated ones, cards pad by 24 dp, and touch targets are
+  at least 48 dp. Shapes (`HudShapes`) are pills for actions and chips, 20 dp cards, 24 dp
+  sheet tops and 16 dp tiles.
+- **Thumb zone:** recon, the first-run card, status and sheets all live in the bottom third.
+  The top of the screen only shows the radar and state chips.
 - The system monospace font in the scaffold. A bundled OFL font (JetBrains Mono or Space Mono)
   is planned for M4.
 - Numbers use tabular figures and roll like an odometer when they change.
@@ -344,21 +395,24 @@ set (soft mechanical clicks and a low "thup" on fire) is planned for M4.
 
 | # | Feature | What it is | Why it matters | When |
 |---|---|---|---|---|
-| 1 | **Probe & Watch** | Onboarding fires probes and *watches* (camera and mic) to find the right code set itself | Removes the most painful part of every universal remote | M3 |
+| 1 | **Probe & Watch** | Onboarding fires probes and *watches* (camera and mic) to find the right code set itself | Removes the most painful part of every universal remote | ✅ swipe-confirmed recon · M3 auto-watch |
 | 2 | **Ghost lock / fire before the camera** | Priors lock a target in ≈150 ms, before the viewfinder exists | "Turn off the TV" in under half a second from the icon tap | M2 |
-| 3 | **Haptic IR texture** | The vibration waveform is derived from the real pulse envelope | You *feel* the invisible; each protocol has a grain | M1 |
-| 4 | **Device radar** | Compass ribbon with your devices at their azimuths, plus Wand mode | Control the AC behind you without turning around; works in the dark | M2 |
+| 3 | **Haptic IR texture** | The vibration waveform is derived from the real pulse envelope | You *feel* the invisible; each protocol has a grain | ✅ |
+| 4 | **Device radar** | Compass ribbon with your devices at their azimuths, plus Wand mode | Control the AC behind you without turning around; works in the dark | ✅ radar · Wand mode M2 |
 | 5 | **Sweep fire ("Lights out")** | Charge POWER, then *sweep* across the room. Every device the reticle passes is queued; release sends power-off to all | The ultimate gadget moment at bedtime | M5 |
 | 6 | **State-aware primary action** | The camera sees whether the TV screen is lit, so TAP = POWER ON when it's dark | One fewer gesture for the most common action | M2 |
 | 7 | **Visual Ack + self-healing codes** | Confirms the device reacted, and silently tries alternate codes when it didn't | Code sets get better by themselves | M3 |
 | 8 | **Knob twist** | Clutch plus roll the phone to dial | Turning the "dial" of the thing you point at is pure physical mapping | M5 |
-| 9 | **Lap mode** | Lower the phone and keep controlling with keys and gestures, screen dimmed | Ergonomics during a movie | M2 |
-| 10 | **Night palette** | A red-only, dim HUD in dark rooms (auto from scene luma) | Preserves dark adaptation; doesn't blind your partner | M1 |
+| 9 | **Lap mode** | Lower the phone and keep controlling with keys and gestures, screen dimmed | Ergonomics during a movie | ✅ |
+| 10 | **Night palette** | A red-only, dim HUD in dark rooms (auto from scene luma) | Preserves dark adaptation; doesn't blind your partner | ✅ |
 | 11 | **Scenes by glyph** | Draw a shape while holding (e.g. **M** for movie: TV on, soundbar HDMI ARC, fan low) | Macros without a macro editor | M5 |
 | 12 | **Flipper interop** | Import and export `.ir` files; share a pinned device as a Flipper file | Taps a large community | M3 |
 | 13 | **Quick Settings tile** | One tap from anywhere straight into the viewfinder (the system camera gesture is reserved for the camera app) | Faster than finding the app; HyperOS "back tap" users can bind it too | M4 |
 | 14 | **Clone my remote** (moonshot) | Decode an old remote's IR blinks through rolling-shutter stripes in camera frames | "Learning" with no IR receiver | Lab spike |
 | 15 | **Remote X-ray** | The front camera often sees a remote's IR LED blink, so the HUD can show whether your physical remote even works | Tiny, delightful debugging tool | M4 |
+| 16 | **Point-blank beam marker** | Below 0.5 m the HUD marks where the beam lands, from the emitter offset and autofocus distance | Honest aiming up close, where the 14–28 mm offset matters | ✅ |
+| 17 | **Heading compass** | A rose that fills with how much the heading can be trusted | Makes the sensor fusion legible: you can see when a soundbar's magnets are confusing it | ✅ |
+| 18 | **Where is my IR blaster?** | A drawing of this phone's back with the emitter placed from the hardware spec | Turns an invisible part into something you understand in one glance | ✅ |
 
 ---
 

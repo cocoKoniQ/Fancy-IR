@@ -13,6 +13,7 @@ import io.github.cocokoniq.fancyir.core.data.catalog.HybridIrStore
 import io.github.cocokoniq.fancyir.core.data.settings.SettingsStore
 import io.github.cocokoniq.fancyir.core.data.vault.SpatialVault
 import io.github.cocokoniq.fancyir.core.data.vault.VaultSnapshot
+import io.github.cocokoniq.fancyir.core.domain.bench.IrTestBench
 import io.github.cocokoniq.fancyir.core.domain.climate.ClimateController
 import io.github.cocokoniq.fancyir.core.domain.climate.ClimateIntent
 import io.github.cocokoniq.fancyir.core.domain.climate.ClimateState
@@ -62,6 +63,7 @@ import io.github.cocokoniq.fancyir.core.sensors.AimSensor
 import io.github.cocokoniq.fancyir.core.vision.FrameObservation
 import io.github.cocokoniq.fancyir.core.vision.ViewfinderController
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -113,6 +115,7 @@ class HudViewModel(private val deps: HudDependencies) : ViewModel() {
         data class Promoted(val device: Device) : Input
         data class Setting(val key: String, val value: String?) : Input
         data class ClimateRestored(val device: DeviceId, val state: ClimateState) : Input
+        data class BenchStep(val index: Int) : Input
         data class Failed(val message: String) : Input
     }
 
@@ -124,6 +127,7 @@ class HudViewModel(private val deps: HudDependencies) : ViewModel() {
         data class PickBrand(val category: DeviceCategory, val brand: String) : SheetAction
         data class PickCommand(val id: String) : SheetAction
         data class PickEmitterProfile(val id: String?) : SheetAction
+        data object RunTestBench : SheetAction
         data object Close : SheetAction
     }
 
@@ -174,6 +178,7 @@ class HudViewModel(private val deps: HudDependencies) : ViewModel() {
     private var emitterOverride: String? = null
     private val climateStates = HashMap<DeviceId, ClimateState>()
     private val lastAnchorSaveMs = HashMap<DeviceId, Long>()
+    private var benchJob: Job? = null
 
     init {
         viewModelScope.launch(Dispatchers.Default) {
@@ -261,6 +266,7 @@ class HudViewModel(private val deps: HudDependencies) : ViewModel() {
                 SettingsStore.HINT_LOCKS_SEEN -> hintLocksSeen = input.value?.toIntOrNull() ?: 0
             }
             is Input.ClimateRestored -> climateStates.putIfAbsent(input.device, input.state)
+            is Input.BenchStep -> fireBenchVector(input.index)
             is Input.Failed -> say("ERROR · ${input.message.uppercase()}")
         }
         return true
@@ -448,7 +454,9 @@ class HudViewModel(private val deps: HudDependencies) : ViewModel() {
             is FireOutcome.Started -> {
                 val envelope = PulseEnvelope.of(outcome.pattern.timingsUs, binUs = ENVELOPE_BIN_US)
                 fire = FireUi(++fireSerial, outcome.request.label, envelope)
-                if (recon == null) say(outcome.request.label + if (outcome.request.presses > 1) " ×${outcome.request.presses}" else "")
+                if (recon == null && outcome.request.targetKey != RECON_TARGET) {
+                    say(outcome.request.label + if (outcome.request.presses > 1) " ×${outcome.request.presses}" else "")
+                }
                 deps.haptics.playTexture(envelope.take(MAX_TEXTURE_BINS).toFloatArray(), ENVELOPE_BIN_US / 1_000L)
                 lockedDevice()?.let { recordAnchor(it.id, force = false) }
             }
@@ -561,6 +569,16 @@ class HudViewModel(private val deps: HudDependencies) : ViewModel() {
                 val id = action.id
                 background { deps.settings.put(SettingsStore.EMITTER_PROFILE, id) }
             }
+            SheetAction.RunTestBench -> {
+                sheet = null
+                benchJob?.cancel()
+                benchJob = viewModelScope.launch(Dispatchers.Default) {
+                    for (index in IrTestBench.vectors.indices) {
+                        inputs.send(Input.BenchStep(index))
+                        delay(IrTestBench.SPACING_MS)
+                    }
+                }
+            }
             SheetAction.Close -> {
                 sheet = null
                 pendingCommands = null
@@ -611,6 +629,14 @@ class HudViewModel(private val deps: HudDependencies) : ViewModel() {
             offsetVectorMm = profile?.offset?.let { o -> o.dxMm?.let { dx -> o.dyMm?.let { dy -> dx to dy } } },
             profiles = EmitterCatalog.profiles.map { PickerEntry(it.id, it.displayName, "${it.offset.distanceMm.toInt()} mm") },
         )
+    }
+
+    /** Hardware verification with an IR receiver (docs/testing/ir-verification.md). */
+    private fun fireBenchVector(index: Int) {
+        val vector = IrTestBench.vectors[index]
+        fire(device = null, label = "BENCH · ${vector.label}", code = vector.code, compiled = null)
+        val expect = vector.word?.let { "0x" + it.toString(16).uppercase() } ?: "${vector.bits} BITS"
+        say("BENCH ${index + 1}/${IrTestBench.vectors.size} · ${vector.label.uppercase()} · EXPECT $expect")
     }
 
     // ---- recon ----

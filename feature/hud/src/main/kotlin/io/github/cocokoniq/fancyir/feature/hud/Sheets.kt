@@ -260,6 +260,10 @@ private fun PhoneSheet(sheet: SheetUi.Phone, onAction: (SheetAction) -> Unit) {
                 }
             }
         }
+        item { Box(Modifier.padding(horizontal = HudSpace.xl)) { SectionLabel("VERIFY WITH AN IR RECEIVER") } }
+        item {
+            EntryRow(PickerEntry("bench", "Run IR test bench", "9 frames · 1.5 s apart")) { onAction(SheetAction.RunTestBench) }
+        }
         item { Box(Modifier.padding(horizontal = HudSpace.xl)) { SectionLabel("NOT RIGHT? CHOOSE YOUR PHONE") } }
         item { EntryRow(PickerEntry("auto", "Detect automatically", null)) { onAction(SheetAction.PickEmitterProfile(null)) } }
         items(sheet.profiles, key = { it.id }) { entry -> EntryRow(entry) { onAction(SheetAction.PickEmitterProfile(entry.id)) } }

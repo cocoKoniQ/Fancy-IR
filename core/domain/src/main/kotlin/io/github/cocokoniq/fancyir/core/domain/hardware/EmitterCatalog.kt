@@ -11,13 +11,14 @@ import io.github.cocokoniq.fancyir.core.domain.hardware.EmitterOffset.Companion.
  */
 object EmitterCatalog {
 
-    private fun rear(id: String, maker: String, models: List<String>, layout: String, position: String, offset: EmitterOffset) =
-        EmitterProfile(id, maker, models, EmitterMount.REAR_PLATEAU, layout, position, offset)
+    private fun rear(id: String, maker: String, models: List<String>, layout: String, position: String, offset: EmitterOffset, aliases: List<String> = emptyList()) =
+        EmitterProfile(id, maker, models, EmitterMount.REAR_PLATEAU, layout, position, offset, aliases)
 
     val profiles: List<EmitterProfile> = listOf(
         // 1. Xiaomi flagships & T-series
         rear("xiaomi-14", "Xiaomi", listOf("Xiaomi 14"), "2×2 squircle, top-left",
-            "Bottom-right ring (with flash and laser AF), upper portion", right(22f)),
+            "Bottom-right ring (with flash and laser AF), upper portion", right(22f),
+            aliases = listOf("23127PN0CC", "23127PN0CG", "houji")),
         rear("xiaomi-14-pro", "Xiaomi", listOf("Xiaomi 14 Pro"), "2×2 squircle, top-left",
             "Bottom-right ring, above the dual-LED flash", right(24f)),
         rear("xiaomi-15", "Xiaomi", listOf("Xiaomi 15", "Xiaomi 15 Pro"), "2×2 squircle, flash outside on the right",
@@ -62,8 +63,8 @@ object EmitterCatalog {
     fun byId(id: String): EmitterProfile? = profiles.firstOrNull { it.id == id }
 }
 
-/** What Android tells us about the phone; `deviceName` is Settings.Global.DEVICE_NAME. */
-data class DeviceIdentity(val manufacturer: String, val brand: String, val model: String, val deviceName: String?)
+/** What Android tells us about the phone; `deviceName` is Settings.Global.DEVICE_NAME, `device` is Build.DEVICE. */
+data class DeviceIdentity(val manufacturer: String, val brand: String, val model: String, val deviceName: String?, val device: String = "")
 
 data class EmitterMatch(val profile: EmitterProfile, val exact: Boolean)
 
@@ -75,6 +76,10 @@ data class EmitterMatch(val profile: EmitterProfile, val exact: Boolean)
 object EmitterMatcher {
 
     fun match(identity: DeviceIdentity, catalog: List<EmitterProfile> = EmitterCatalog.profiles): EmitterMatch? {
+        // Model codes and codenames are unambiguous: they win even over a renamed device.
+        val codes = setOf(key(identity.model), key(identity.device)) - ""
+        catalog.firstOrNull { profile -> profile.aliases.any { key(it) in codes } }?.let { return EmitterMatch(it, exact = true) }
+
         val candidates = listOfNotNull(identity.deviceName, identity.model, "${identity.brand} ${identity.model}", "${identity.manufacturer} ${identity.model}")
             .map(::key)
             .filter { it.isNotEmpty() }

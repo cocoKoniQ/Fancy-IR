@@ -14,7 +14,7 @@ import kotlin.test.assertTrue
 
 class EmitterRegistryTest {
 
-    private fun identity(name: String?, model: String = "23127PN0CG", maker: String = "Xiaomi") =
+    private fun identity(name: String?, model: String = "2400ABCDEG", maker: String = "Xiaomi") =
         DeviceIdentity(manufacturer = maker, brand = maker, model = model, deviceName = name)
 
     @Test
@@ -42,6 +42,13 @@ class EmitterRegistryTest {
         assertEquals("oneplus-15", match.profile.id)
         assertEquals(false, match.exact)
         assertNull(EmitterMatcher.match(identity(null)))
+    }
+
+    @Test
+    fun `xiaomi 14 matches by model code or codename even when renamed`() {
+        assertEquals("xiaomi-14", EmitterMatcher.match(identity("Kitchen phone", model = "23127PN0CG"))?.profile?.id)
+        assertEquals("xiaomi-14", EmitterMatcher.match(DeviceIdentity("Xiaomi", "Xiaomi", "unknown", null, device = "houji"))?.profile?.id)
+        assertEquals("xiaomi-14", EmitterMatcher.match(identity("Xiaomi 14", model = "X"))?.profile?.id)
     }
 
     @Test

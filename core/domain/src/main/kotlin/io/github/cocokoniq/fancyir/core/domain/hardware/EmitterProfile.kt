@@ -43,6 +43,8 @@ data class EmitterProfile(
     val islandLayout: String,
     val position: String,
     val offset: EmitterOffset,
+    /** Exact `Build.MODEL` codes or `Build.DEVICE` codenames, for phones whose device name was changed. */
+    val aliases: List<String> = emptyList(),
 ) {
     val displayName: String get() = models.joinToString(" / ")
 }

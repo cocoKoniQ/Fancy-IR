@@ -16,6 +16,7 @@ object PhoneHardware {
         model = Build.MODEL.orEmpty(),
         // Defaults to the marketing name ("Xiaomi 15 Pro"); Build.MODEL is often a code.
         deviceName = runCatching { Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME) }.getOrNull(),
+        device = Build.DEVICE.orEmpty(),
     )
 
     fun emitterMatch(context: Context): EmitterMatch? = EmitterMatcher.match(identity(context))

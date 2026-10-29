@@ -33,4 +33,4 @@ if [ "$POLICY" = "cc0-only" ]; then
   EXCLUDE_ARGS=(--irdb-exclude "$WORK/irdb-pre-cc0.txt")
 fi
 
-"$ROOT/gradlew" -p "$ROOT" -q :tools:irdb-compiler:run --args="--irdb $WORK/irdb ${EXCLUDE_ARGS[*]} --smartir $WORK/smartir --out $ROOT/core/data/src/main/assets/catalog/fancyir-catalog.tsv.gz"
+"$ROOT/gradlew" -p "$ROOT" -q :tools:irdb-compiler:run --args="--irdb $WORK/irdb ${EXCLUDE_ARGS[*]} --smartir $WORK/smartir --out $ROOT/core/data/src/main/assets/catalog/fancyir-catalog.tsv.gzip"

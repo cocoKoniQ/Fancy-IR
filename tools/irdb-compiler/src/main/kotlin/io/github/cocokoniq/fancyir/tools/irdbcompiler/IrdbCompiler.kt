@@ -141,7 +141,7 @@ private class Options(
             val map = args.toList().chunked(2).associate { it[0].removePrefix("--") to it.getOrElse(1) { "" } }
             val out = map["out"] ?: run {
                 System.err.println(
-                    "usage: --out <catalog.tsv.gz> [--irdb <Flipper-IRDB dir>] [--irdb-exclude <paths.txt>] [--smartir <SmartIR dir>]\n" +
+                    "usage: --out <catalog.tsv.gzip> [--irdb <Flipper-IRDB dir>] [--irdb-exclude <paths.txt>] [--smartir <SmartIR dir>]\n" +
                         "       [--categories TV,FAN,...] [--max-brands N] [--max-families N] [--climate-brands N] [--profiles-per-brand N]",
                 )
                 return null

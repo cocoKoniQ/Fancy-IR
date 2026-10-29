@@ -440,8 +440,8 @@ set (soft mechanical clicks and a low "thup" on fire) is planned for M4.
 
 ## 8. Open UX questions
 
-1. Should TAP on a TV default to **MUTE** or **PLAY/PAUSE**? (The proposal is MUTE: it works
-   across inputs. PLAY/PAUSE only works on smart TV apps.)
+1. ~~Should TAP on a TV default to MUTE or PLAY/PAUSE?~~ Decided: **MUTE**. It works on every
+   input; PLAY/PAUSE stays on the radial deck (◀).
 2. Lap-mode threshold: 50° down, or "screen face-down"? We'd like to test with you.
 3. Sweep fire: send power-off only, or "toggle all"? (Toggle is dangerous across mixed states.)
 4. Should the radar ribbon be always on or only in Blind and Wand modes?

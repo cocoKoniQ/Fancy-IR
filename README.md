@@ -13,6 +13,7 @@ remote grids. It works like a HUD.
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | Recognition pipeline, sensor fusion, IR engine, the 3-layer IR storage engine, Android architecture, roadmap, open questions |
 | [`DESIGN.md`](DESIGN.md) | HUD statechart, launch timeline, gesture grammar, recon flow, design tokens, haptics, feature catalog |
 | [`docs/hardware/rear-camera-ir-blaster-spec.md`](docs/hardware/rear-camera-ir-blaster-spec.md) | Where the IR emitter sits on each rear-plateau phone, and what that means for aiming |
+| [`docs/testing/ir-verification.md`](docs/testing/ir-verification.md) | Checking the phone's real IR output with a microcontroller receiver (in-app test bench) |
 | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) | Licences of the bundled IR code data |
 
 ## Project layout
@@ -43,7 +44,9 @@ Requirements: JDK 17+ and an Android SDK with platform 37.
 ./gradlew :app:assembleDebug                                # the Android app
 ```
 
-The app requires a phone with an IR emitter (`android.hardware.consumerir`).
+The app requires a phone with an IR emitter (`android.hardware.consumerir`). Distribution is
+sideload-only: install the `fancy-ir-debug-apk` artifact from a CI run, or
+`adb install app/build/outputs/apk/debug/app-debug.apk`.
 
 ### Regenerating the IR catalog
 

@@ -35,8 +35,9 @@ motion, haptics and the feature catalog.
    slows the HUD.
 4. **Thumb-to-photon under 50 ms.** From touch-up (or volume key) to IR leaving the LED. Every
    design choice in the fire path answers to this budget.
-5. **Offline and private by default.** No frame leaves the device unless the user explicitly
-   turns on cloud identification for a single onboarding.
+5. **Offline and private.** [DECISION] No camera frame ever leaves the device: recognition and
+   identification are on-device only. The only network use is the Layer 3 code-database
+   lookup (§3.8), which sends a category and brand name to GitHub and can be switched off.
 6. **Closed loop over guesswork.** The camera already looks at the device, so it can *see*
    whether a code worked. We use that during onboarding (Probe & Watch, §2.4) and for the
    self-healing of code sets (§3.6).
@@ -174,11 +175,10 @@ inside the HUD. There is no separate screen.
    table, so "SΛMSUNG" or a partly hidden logo still matches).
 3. **Model number** (optional): aim at the rating sticker or back label. OCR reads the model
    number, which often matches an exact file name in the IR database.
-4. **Cloud VLM** [OPEN] (opt-in, per use): send *only the reticle crop* to a multimodal model,
-   which returns `{category, brand, model_guess, confidence}` as JSON. This covers the long
-   tail. It is off by default, and the INTERNET path is isolated in its own module.
-5. **Manual fallback:** a searchable brand and category picker, reached by sliding a thumb
-   through a list with no precise taps.
+4. ~~Cloud VLM~~: declined (offline only, §0.5). The long tail is covered by typing the brand,
+   which goes to the Layer 3 lookup.
+5. **Manual fallback** (built): a category grid and a brand list filtered as you type, with
+   large rows and no precise taps.
 
 The output is a **ranked list of candidate code-set families** (§3.5) for the
 `(category, brand)` pair, with priors based on how common each family is.
@@ -427,7 +427,8 @@ anything:
 | Concurrency | Coroutines/Flow; dedicated single-thread dispatchers for IR and analysis | |
 | DI | **Manual `AppGraph`** for now | No annotation processing, fast builds, explicit wiring. Revisit (Metro or Hilt) past about 30 bindings |
 | Persistence | Room **2.8.5** via KSP **2.3.12**: the 3-layer store (§3.8) and settings in one database; schema exported and checked in | One schema, one migration path; settings beside the data they configure |
-| minSdk / target | **33** / **36** [OPEN] | AGSL and modern haptics without fallbacks. Every camera-plateau IR phone ships Android 14 or later |
+| minSdk / target | **33** / **36** | AGSL and modern haptics without fallbacks. Every camera-plateau IR phone ships Android 14 or later |
+| Distribution | **Sideload only** [DECISION]: the APK from CI (`fancy-ir-debug-apk` artifact) or a locally built one | No store policy constraints. `uses-feature consumerir` stays as documentation; it doesn't block sideloading |
 
 ### 4.2 Modules
 
@@ -537,7 +538,7 @@ anything:
 
 ## 6. Testing strategy
 
-- **JVM unit tests** (107 today) for:
+- **JVM unit tests** (113 today) for:
   - Encoder golden structure and round-trip decoding (via a reference decoder in tests);
     Pronto and Broadlink decoding against real SmartIR packets; compiled commands.
   - Flipper and SmartIR parser edge cases, catalog bundle round-trips, family ranking, and the
@@ -550,7 +551,11 @@ anything:
   caching, vault round-trips, and seeding the real shipped catalog asset.
 - **Instrumented tests** on a real IR phone for transmitter capabilities and pattern
   acceptance.
-- **Hardware loop:** a Flipper Zero or ESP32+TSOP receiver as an oracle for every encoder.
+- **Hardware loop:** a microcontroller IR receiver as the oracle for every encoder. The
+  in-app **IR test bench** (My Phone sheet) fires nine reference frames whose expected
+  decoder words are in [`docs/testing/ir-verification.md`](docs/testing/ir-verification.md).
+  `IrTestBenchTest` keeps that table honest against the encoders, and `StarterLibraryTest`
+  pins the starter TV sets to the canonical decoder words.
 - **Macrobenchmark** for startup and HUD frame timing, enforced in CI from M4.
 
 ---
@@ -601,28 +606,32 @@ class HybridIrStore(catalog: CatalogRepository, remotes: List<RemoteCodesetSourc
 
 - Frames are processed in memory and never written to disk, except **gallery exemplars**,
   which are *embeddings*, not images. A debug flag can store crops locally.
-- Cloud identify sends only the reticle crop, only when the user asks, and shows exactly what
-  is sent.
+- Nothing visual is ever uploaded. Layer 3 lookups send only the category folder and brand
+  name to GitHub, and the `catalog.remoteLookup` setting turns them off.
 - No analytics SDKs. Local-only latency telemetry for the debug HUD.
 
 ---
 
-## 10. Open questions for the product owner
+## 10. Decisions and open questions
 
-1. **Your exact phone model(s)?** The emitter registry now covers 19 families from your spec.
-   Is your phone's device name one of them? If not, which entry is closest?
-2. **Your devices:** brand and model of the TV, AC, fan, soundbar and monitor in your room.
-   They become the M1 starter code sets and the M2 recognition test set.
-3. **Do you own a Flipper Zero?** It would be our ground-truth IR receiver for encoder
-   verification.
-4. **Cloud VLM identify:** allowed, as an opt-in flavor with INTERNET? Or strictly offline
-   forever?
-5. **AC strategy:** resolved with SmartIR state tables (MIT). Clean-room encoders only for
-   brands SmartIR lacks?
-6. **IRDB legal posture:** the bundle is CC0-only (119 code sets). `POLICY=all` would bundle
-   873 code sets (117 TV brands) in 897 KB. Ship it, or keep relying on Layer 3 for those?
-   (Get advice before choosing `all`.)
-7. **Distribution:** Play Store (which drives target SDK, `uses-feature` filtering and policy
-   for camera/mic use) or sideload/F-Droid?
-8. **minSdk 33:** fine, or do you also want to support older top-edge IR phones (Wand mode
-   only)?
+**Decided with the product owner (October 2026):**
+
+| Topic | Decision |
+|---|---|
+| Phone | **Xiaomi 14**: emitter in the bottom-right ring of the island, ≈22 mm right of the main lens (back view). Matched by device name, model codes `23127PN0CC`/`23127PN0CG` or codename `houji` |
+| Test device | **2014 Samsung TV**: Samsung32, address 0x07; the starter set ranks first and carries discrete power, digits and navigation |
+| Encoder verification | The owner's microcontroller IR receiver, with the in-app test bench (§6) |
+| Cloud vision | **Declined**: offline only (§0.5) |
+| AC strategy | Stay within the 3-layer plan: SmartIR state tables through Layers 2 and 3, no encoder ports for now |
+| Distribution | **Sideload only** (§4.1) |
+| TAP on TVs | **MUTE**: it works on every input, while PLAY/PAUSE only works in smart-TV apps |
+
+**Still open:**
+
+1. **IRDB licence policy:** the bundle is CC0-only (119 code sets). `POLICY=all` would bundle
+   873 code sets (117 TV brands) in 897 KB. With sideload-only distribution the exposure is
+   smaller, but it is still redistribution. Keep relying on Layer 3 for those, or bundle them?
+2. **Room context:** tagging anchors with the Wi-Fi BSSID needs the location permission on
+   Android. Worth asking for, or are compass anchors enough for one room?
+3. **Which decoder runs on your microcontroller?** IRremoteESP8266 prints the words in
+   docs/testing as-is; Arduino-IRremote reports address and command instead (also listed).

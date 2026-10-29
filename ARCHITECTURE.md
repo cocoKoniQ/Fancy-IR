@@ -516,7 +516,7 @@ is a spike, not a promise.
 // :core:ir
 interface IrTransmitter { val capabilities: IrCapabilities; suspend fun transmit(pattern: IrPattern) }
 object ProtocolEncoders { fun encode(protocol: IrProtocol, address: Long, command: Long, toggle: Boolean = false): IrSignal }
-class IrEngine(transmitter: IrTransmitter, scope: CoroutineScope) { fun fire(request: FireRequest); val events: SharedFlow<FireEvent> }
+class IrEngine(transmitter: IrTransmitter, scope: CoroutineScope) { fun fire(request: FireRequest): Boolean; val events: SharedFlow<FireOutcome> }
 
 // :core:irdb
 object FlipperIrParser { fun parse(text: String): IrFile }
@@ -526,7 +526,7 @@ object CommandVocabulary { fun normalize(buttonName: String): Command }
 class GestureArbiter(config: GestureConfig) { fun onInput(input: PointerInput): List<GestureEvent> }
 class TargetingMachine(config: TargetingConfig) { fun onObservation(obs: TargetObservation): TargetingState }
 interface Fingerprinter { fun fingerprint(tile: LumaChromaTile): FloatArray }
-class ProbePlanner(candidates: List<Candidate>) { fun nextProbe(): Probe?; fun observe(probe: Probe, reacted: Boolean) }
+class ProbePlanner(candidates: List<Candidate>, probes: List<Probe>) { fun nextProbe(): Probe?; fun observe(probe: Probe, reacted: Boolean) }
 ```
 
 ---

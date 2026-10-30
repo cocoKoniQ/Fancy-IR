@@ -182,7 +182,11 @@ LOCK-IN    hold steady — painting ◔
     it.
   - Volume keys and gestures keep working. This is the "adjust volume during the movie
     without raising the phone" posture.
-- **Wand mode** (no camera permission, or a top-edge emitter): there is no viewfinder.
+- **Top-frame phones** (built): the emitter is on the top edge, 90° to the camera. You lock on
+  with the camera as usual; the status line says `LOCKED · TILT FLAT TO FIRE FROM THE TOP
+  EDGE`, and tilting the phone flat with its top edge toward the device enters lap mode, where
+  gestures fire. There is no beam marker.
+- **Wand mode** (no camera permission, or a top-edge emitter; M2): there is no viewfinder.
   - The radar ribbon grows to fill the top third of the screen.
   - The device closest to your pointing direction is "locked" by the spatial prior alone.
   - The gestures are identical.
@@ -190,12 +194,15 @@ LOCK-IN    hold steady — painting ◔
 ### 2.7a My phone (where the beam comes from)
 
 Hold ▶ MY PHONE (or *Where is my IR blaster?* on the first-run card) opens a sheet with a
-drawing of the back of this phone. The camera island is top-left, and the IR emitter is placed
-by its offset from the main lens, from the hardware spec. When the spec only gives a
-distance, a dashed ring shows the range. The sheet shows the island layout, the position in
-words and the offset, and lets you pick the right phone if automatic matching guessed wrong.
+drawing of the back of this phone. The camera island is drawn in its own shape (squircle,
+centred or top-left circle, pill, visor), and the 1× lens (white ring) and the IR emitter
+(pulsing infrared dot) sit at their positions inside it from the hardware spec, joined by a
+dashed line. The sheet shows the position in words and the offset (`10 mm right and 20 mm
+down from the 1× lens`), and lets you pick the right phone if automatic matching guessed
+wrong; a partial match says it is a best guess. Top-frame phones get a top-edge drawing and the
+`Top-Edge IR Blaster (Tilt phone to fire)` badge instead.
 
-**Point-blank beam marker:** below 0.5 m (from autofocus), the 14–28 mm offset is visible, so
+**Point-blank beam marker:** below 0.5 m (from autofocus), the 13–28 mm offset is visible, so
 a small infrared ring marks where the beam really lands, labelled `BEAM · 18 cm`. Beyond that
 the reticle centre *is* the beam centre and the marker disappears.
 
@@ -410,9 +417,9 @@ set (soft mechanical clicks and a low "thup" on fire) is planned for M4.
 | 13 | **Quick Settings tile** | One tap from anywhere straight into the viewfinder (the system camera gesture is reserved for the camera app) | Faster than finding the app; HyperOS "back tap" users can bind it too | M4 |
 | 14 | **Clone my remote** (moonshot) | Decode an old remote's IR blinks through rolling-shutter stripes in camera frames | "Learning" with no IR receiver | Lab spike |
 | 15 | **Remote X-ray** | The front camera often sees a remote's IR LED blink, so the HUD can show whether your physical remote even works | Tiny, delightful debugging tool | M4 |
-| 16 | **Point-blank beam marker** | Below 0.5 m the HUD marks where the beam lands, from the emitter offset and autofocus distance | Honest aiming up close, where the 14–28 mm offset matters | ✅ |
+| 16 | **Point-blank beam marker** | Below 0.5 m the HUD marks where the beam lands, from the emitter offset and autofocus distance | Honest aiming up close, where the 13–28 mm offset matters | ✅ |
 | 17 | **Heading compass** | A rose that fills with how much the heading can be trusted | Makes the sensor fusion legible: you can see when a soundbar's magnets are confusing it | ✅ |
-| 18 | **Where is my IR blaster?** | A drawing of this phone's back with the emitter placed from the hardware spec | Turns an invisible part into something you understand in one glance | ✅ |
+| 18 | **Where is my IR blaster?** | A drawing of this phone's back, island shape, 1× lens and emitter placed from the hardware spec; top-frame phones get a tilt badge | Turns an invisible part into something you understand in one glance | ✅ |
 
 ---
 

@@ -48,8 +48,8 @@ motion, haptics and the feature catalog.
 
 | Assumption | Reality | Consequence |
 |---|---|---|
-| "On these phones the emitter sits on the camera plateau." | Mapped per model in [`docs/hardware/rear-camera-ir-blaster-spec.md`](docs/hardware/rear-camera-ir-blaster-spec.md): 19 Xiaomi, POCO/Redmi, OnePlus, vivo, iQOO, realme, HONOR and Tecno/Infinix rows, each with position and a 14–28 mm offset from the main lens. | `EmitterCatalog` transcribes the spec; `EmitterMatcher` finds this phone by its user-visible device name (`Build.MODEL` is usually a code), with a manual choice saved as a setting. Phones with a top-edge emitter get **Wand mode**: no viewfinder, orientation radar plus gestures (DESIGN §6). |
-| "What the camera sees is what the beam hits." | The lens-to-emitter offset is 14–28 mm and the beam is ±15–25° wide: under 0.6° of error at 2 m, but visible point-blank (spec §5.A–B). | Aiming is about *intent*. Below 0.5 m (from the autofocus distance) the HUD marks where the beam actually lands (`Parallax`). |
+| "On these phones the emitter sits on the camera plateau." | Mapped per model in [`docs/hardware/rear-camera-ir-blaster-spec.md`](docs/hardware/rear-camera-ir-blaster-spec.md) (v2): 15 verified rear-plateau families (Xiaomi, POCO/Redmi, OnePlus, vivo, iQOO, realme), each with its island shape, the 1× lens and emitter positions normalised to the island, and a 13–28 mm (dx, dy) offset. 11 look-alike families keep the emitter on the **top frame**. v1 drew every 1× lens bottom-left and pushed emitters off the island. | `EmitterCatalog` transcribes the spec as `PhoneIrProfile`s; `EmitterMatcher` finds this phone by model code, codename, user-visible device name (`Build.MODEL` is usually a code) or a brand-scoped model prefix, with a manual choice saved as a setting. Top-frame phones get a *Tilt phone to fire* badge and no beam marker; they lock with the camera and fire in lap mode, until **Wand mode** (no viewfinder, radar plus gestures, DESIGN §2.7) lands. |
+| "What the camera sees is what the beam hits." | The lens-to-emitter offset is 13–28 mm and the beam is ±15–25° wide: under 0.6° of error at 2 m, but visible point-blank (spec §5.A–B). | Aiming is about *intent*. Below 0.5 m (from the autofocus distance) the HUD marks where the beam actually lands (`Parallax`). |
 | "60 fps viewfinder, always." | At 60 fps exposure is capped at 16.6 ms, so a dark living room becomes a noisy, useless image for recognition. | The **HUD** is held at display refresh. The **camera** uses an AE target range such as `[30, 60]` so it can drop to 30 fps in the dark. Smoothness is perceived through the HUD. |
 | "The phone can learn codes from my old remote." | `ConsumerIrManager` is transmit-only. These phones have no IR receiver. | Codes come from databases, protocol generators and closed-loop probing. Optical learning through the camera is an R&D moonshot (§3.7). |
 | "IR transmit is fire-and-forget." | `transmit()` is **synchronous**: it blocks for the length of the pattern, calls are serialized by the system service, and AOSP rejects patterns over 2 s or with non-positive slices. Duty cycle can't be set (the HAL picks one). Carrier ranges differ per device. | A dedicated single-thread transmit actor with chunking, coalescing, deadlines and per-device quirks (§3.3). |
@@ -538,7 +538,7 @@ anything:
 
 ## 6. Testing strategy
 
-- **JVM unit tests** (113 today) for:
+- **JVM unit tests** (118 today) for:
   - Encoder golden structure and round-trip decoding (via a reference decoder in tests);
     Pronto and Broadlink decoding against real SmartIR packets; compiled commands.
   - Flipper and SmartIR parser edge cases, catalog bundle round-trips, family ranking, and the
@@ -618,7 +618,7 @@ class HybridIrStore(catalog: CatalogRepository, remotes: List<RemoteCodesetSourc
 
 | Topic | Decision |
 |---|---|
-| Phone | **Xiaomi 14**: emitter in the bottom-right ring of the island, ≈22 mm right of the main lens (back view). Matched by device name, model codes `23127PN0CC`/`23127PN0CG` or codename `houji` |
+| Phone | **Xiaomi 14**: emitter in a tiny window between the bottom two lenses, below the Leica logo: 10 mm right of and 20 mm below the top-left main lens, ≈22 mm (back view; spec v2). Matched by device name, model codes `23127PN0CC`/`23127PN0CG`/`23116PN5BC` or codenames `houji`/`shennong` |
 | Test device | **2014 Samsung TV**: Samsung32, address 0x07; the starter set ranks first and carries discrete power, digits and navigation |
 | Encoder verification | The owner's microcontroller IR receiver, with the in-app test bench (§6) |
 | Cloud vision | **Declined**: offline only (§0.5) |

@@ -2,6 +2,7 @@ package io.github.cocokoniq.fancyir.feature.hud
 
 import androidx.compose.runtime.Immutable
 import io.github.cocokoniq.fancyir.core.domain.gesture.Direction
+import io.github.cocokoniq.fancyir.core.domain.hardware.IslandShape
 import io.github.cocokoniq.fancyir.core.domain.spatial.MotionState
 import io.github.cocokoniq.fancyir.core.domain.targeting.LockSource
 import io.github.cocokoniq.fancyir.core.irdb.DeviceCategory
@@ -80,15 +81,27 @@ sealed interface SheetUi {
 
     data class Phone(
         val profileName: String?,
+        /** Detected from the device's identity; [bestGuess] when only a partial name or code matched. */
         val matchedAutomatically: Boolean,
-        val mount: String?,
-        val position: String?,
-        val offsetMm: Float?,
-        /** Back view, +x right, +y down (mm); null when the spec gives only a distance. */
-        val offsetVectorMm: Pair<Float, Float>?,
+        val bestGuess: Boolean,
+        val topFrame: Boolean,
+        val description: String?,
+        /** Back view, from the 1× lens: +x right, +y down (mm); null for top-frame or unknown phones. */
+        val offsetMm: Pair<Float, Float>?,
+        val diagram: PlateauDiagram?,
         val profiles: List<PickerEntry>,
     ) : SheetUi
 }
+
+/** The camera island schematic: positions normalised to the island's box, back view, (0, 0) top-left. */
+@Immutable
+data class PlateauDiagram(
+    val shape: IslandShape,
+    val lensX: Float,
+    val lensY: Float,
+    val emitterX: Float,
+    val emitterY: Float,
+)
 
 enum class ReconStage { LOOKING_UP, PROBING, SAVING, DONE, NO_MATCH, UNAVAILABLE }
 

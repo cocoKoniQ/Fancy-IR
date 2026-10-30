@@ -1,5 +1,10 @@
 package io.github.cocokoniq.fancyir.feature.hud
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -38,9 +43,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
@@ -51,8 +58,14 @@ import io.github.cocokoniq.fancyir.core.designsystem.HudSpace
 import io.github.cocokoniq.fancyir.core.designsystem.HudTokens
 import io.github.cocokoniq.fancyir.core.designsystem.HudType
 import io.github.cocokoniq.fancyir.core.designsystem.LocalHudPalette
+import io.github.cocokoniq.fancyir.core.domain.hardware.IslandShape
 import io.github.cocokoniq.fancyir.core.irdb.DeviceCategory
 import io.github.cocokoniq.fancyir.feature.hud.HudViewModel.SheetAction
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /** Bottom sheet host: scrim to dismiss, sheet in the thumb zone, content by type. */
 @Composable
@@ -234,7 +247,7 @@ private fun CommandsSheet(sheet: SheetUi.Commands, onAction: (SheetAction) -> Un
     }
 }
 
-/** "Here is where your invisible laser fires from" (docs/hardware/rear-camera-ir-blaster-spec.md §5.D). */
+/** "Here is where your invisible laser fires from" (docs/hardware/rear-camera-ir-blaster-spec.md §4). */
 @Composable
 private fun PhoneSheet(sheet: SheetUi.Phone, onAction: (SheetAction) -> Unit) {
     val palette = LocalHudPalette.current
@@ -242,20 +255,26 @@ private fun PhoneSheet(sheet: SheetUi.Phone, onAction: (SheetAction) -> Unit) {
         sheet.profileName ?: "Unknown phone",
         when {
             sheet.profileName == null -> "Not in the emitter registry yet. Choose your phone below."
+            sheet.bestGuess -> "Best guess from a partial name or model code. Check it against your phone."
             sheet.matchedAutomatically -> "Detected automatically"
             else -> "Chosen by you"
         },
     )
     LazyColumn {
-        item {
+        if (sheet.profileName != null) item {
             Row(Modifier.padding(horizontal = HudSpace.xl), horizontalArrangement = Arrangement.spacedBy(HudSpace.xl), verticalAlignment = Alignment.CenterVertically) {
-                PhoneBackDiagram(sheet.offsetVectorMm, sheet.offsetMm, Modifier.width(120.dp).height(168.dp))
+                val diagramSize = Modifier.width(120.dp).height(168.dp)
+                if (sheet.diagram != null) PhoneBackDiagram(sheet.diagram, diagramSize) else TopEdgeDiagram(diagramSize)
                 Column(verticalArrangement = Arrangement.spacedBy(HudSpace.s), modifier = Modifier.weight(1f)) {
-                    sheet.mount?.let { Text(it, style = HudType.Caption, color = palette.signal) }
-                    sheet.position?.let { Text(it, style = HudType.Body, color = palette.ink) }
-                    sheet.offsetMm?.let {
-                        Text("≈${it.toInt()} mm from the main lens. Beyond 1 m the reticle centre is the beam centre; up close Fancy-IR marks where the beam lands.",
+                    if (sheet.topFrame) TopEdgeBadge() else Text("REAR CAMERA PLATEAU", style = HudType.Caption, color = palette.signal)
+                    sheet.description?.let { Text(it, style = HudType.Body, color = palette.ink) }
+                    sheet.offsetMm?.let { (dx, dy) ->
+                        Text("${offsetPhrase(dx, dy)} Beyond 1 m the reticle centre is the beam centre; up close Fancy-IR marks where the beam lands.",
                             style = HudType.Body, color = palette.ink.copy(alpha = 0.6f))
+                    }
+                    if (sheet.diagram != null) Row(horizontalArrangement = Arrangement.spacedBy(HudSpace.m)) {
+                        Text("○ 1× LENS", style = HudType.Caption, color = palette.ink.copy(alpha = 0.6f))
+                        Text("● IR", style = HudType.Caption, color = palette.infrared)
                     }
                 }
             }
@@ -270,32 +289,97 @@ private fun PhoneSheet(sheet: SheetUi.Phone, onAction: (SheetAction) -> Unit) {
     }
 }
 
+/** "10 mm right and 20 mm down from the 1× lens (≈22 mm)." Back view, as the spec measures it. */
+private fun offsetPhrase(dxMm: Float, dyMm: Float): String {
+    val parts = listOfNotNull(
+        dxMm.takeIf { it != 0f }?.let { "${abs(it).roundToInt()} mm ${if (it > 0) "right" else "left"}" },
+        dyMm.takeIf { it != 0f }?.let { "${abs(it).roundToInt()} mm ${if (it > 0) "down" else "up"}" },
+    )
+    return "${parts.joinToString(" and ")} from the 1× lens, seen from the back (≈${hypot(dxMm, dyMm).roundToInt()} mm)."
+}
+
+@Composable
+private fun TopEdgeBadge() {
+    val palette = LocalHudPalette.current
+    Text(
+        "Top-Edge IR Blaster (Tilt phone to fire)",
+        style = HudType.Caption,
+        color = palette.infrared,
+        modifier = Modifier
+            .background(palette.infrared.copy(alpha = 0.14f), HudShapes.pill)
+            .padding(horizontal = HudSpace.m, vertical = HudSpace.xs),
+    )
+}
+
 /**
- * The back of a portrait phone with the camera island top-left and the IR emitter placed by its
- * offset from the main lens; when the spec gives only a distance, a dashed ring shows the range.
+ * The back of a portrait phone with its camera island drawn by shape, and the 1× lens and the IR
+ * emitter at their normalised positions inside the island's box. v1 placed every lens bottom-left
+ * and pushed emitters off the island; now both points come from the profile.
  */
 @Composable
-private fun PhoneBackDiagram(offsetMm: Pair<Float, Float>?, distanceMm: Float?, modifier: Modifier) {
+private fun PhoneBackDiagram(diagram: PlateauDiagram, modifier: Modifier) {
+    val palette = LocalHudPalette.current
+    val glow by rememberInfiniteTransition(label = "emitter").animateFloat(
+        initialValue = 0.15f, targetValue = 0.4f,
+        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "glow",
+    )
+    Canvas(modifier) {
+        val mm = size.width / PHONE_WIDTH_MM
+        drawRoundRect(palette.ink.copy(alpha = 0.25f), size = size, cornerRadius = CornerRadius(14.dp.toPx()), style = Stroke(1.5.dp.toPx()))
+        val island = islandBox(diagram.shape, mm)
+        drawIsland(diagram.shape, island, palette.ink.copy(alpha = 0.12f))
+        fun at(x: Float, y: Float) = Offset(island.left + x * island.width, island.top + y * island.height)
+        val lens = at(diagram.lensX, diagram.lensY)
+        val emitter = at(diagram.emitterX, diagram.emitterY)
+        drawLine(palette.infrared.copy(alpha = 0.5f), lens, emitter, 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f)))
+        val lensRadius = minOf(5 * mm, minOf(island.width, island.height) * 0.2f)
+        drawCircle(palette.ink.copy(alpha = 0.7f), lensRadius, lens, style = Stroke(1.5.dp.toPx()))
+        drawCircle(palette.ink.copy(alpha = 0.85f), lensRadius * 0.45f, lens)
+        drawCircle(palette.infrared.copy(alpha = glow), 4.5f * mm, emitter)
+        drawCircle(palette.infrared, 1.8f * mm, emitter)
+    }
+}
+
+/** Island bounding boxes in phone millimetres. Some boxes reach past the outline, where flash and IR sit on the glass. */
+private fun islandBox(shape: IslandShape, mm: Float): Rect = when (shape) {
+    IslandShape.SQUIRCLE_TOP_LEFT -> Rect(Offset(6 * mm, 6 * mm), Size(38 * mm, 38 * mm))
+    IslandShape.CIRCLE_CENTER -> Rect(Offset((PHONE_WIDTH_MM - 50) / 2 * mm, 8 * mm), Size(50 * mm, 50 * mm))
+    IslandShape.CIRCLE_TOP_LEFT -> Rect(Offset(6 * mm, 6 * mm), Size(46 * mm, 36 * mm))
+    IslandShape.PILL_TOP_LEFT -> Rect(Offset(6 * mm, 6 * mm), Size(32 * mm, 40 * mm))
+    IslandShape.VISOR_TOP -> Rect(Offset(6 * mm, 6 * mm), Size(60 * mm, 22 * mm))
+}
+
+private fun DrawScope.drawIsland(shape: IslandShape, box: Rect, color: Color) {
+    when (shape) {
+        IslandShape.SQUIRCLE_TOP_LEFT -> drawRoundRect(color, box.topLeft, box.size, CornerRadius(box.width * 0.26f))
+        IslandShape.CIRCLE_CENTER -> drawCircle(color, box.width / 2, box.center)
+        // The ring fills the left of the box; the strip to its right holds the flash.
+        IslandShape.CIRCLE_TOP_LEFT -> drawCircle(color, box.height / 2, Offset(box.left + box.height / 2, box.center.y))
+        IslandShape.PILL_TOP_LEFT -> {
+            val width = box.width * 0.58f
+            drawRoundRect(color, Offset(box.left + box.width * 0.06f, box.top), Size(width, box.height), CornerRadius(width / 2))
+        }
+        IslandShape.VISOR_TOP -> drawRoundRect(color, box.topLeft, box.size, CornerRadius(box.height / 2))
+    }
+}
+
+/** A top-frame phone: the emitter is on the top edge and the beam leaves upwards, away from the camera axis. */
+@Composable
+private fun TopEdgeDiagram(modifier: Modifier) {
     val palette = LocalHudPalette.current
     Canvas(modifier) {
-        val pxPerMm = size.width / PHONE_WIDTH_MM
-        drawRoundRect(palette.ink.copy(alpha = 0.25f), size = size, cornerRadius = CornerRadius(14.dp.toPx()), style = Stroke(1.5.dp.toPx()))
-        val island = Size(36 * pxPerMm, 36 * pxPerMm)
-        val islandTopLeft = Offset(6 * pxPerMm, 6 * pxPerMm)
-        drawRoundRect(palette.ink.copy(alpha = 0.12f), topLeft = islandTopLeft, size = island, cornerRadius = CornerRadius(10 * pxPerMm))
-        val lens = Offset(islandTopLeft.x + 11 * pxPerMm, islandTopLeft.y + 25 * pxPerMm)
-        drawCircle(palette.ink.copy(alpha = 0.6f), 6 * pxPerMm, lens, style = Stroke(1.5.dp.toPx()))
-        when {
-            offsetMm != null -> {
-                val emitter = lens + Offset(offsetMm.first * pxPerMm, offsetMm.second * pxPerMm)
-                drawCircle(palette.infrared.copy(alpha = 0.25f), 7 * pxPerMm, emitter)
-                drawCircle(palette.infrared, 2.5f * pxPerMm, emitter)
-            }
-            distanceMm != null -> drawCircle(
-                palette.infrared.copy(alpha = 0.7f), distanceMm * pxPerMm, lens,
-                style = Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f))),
-            )
+        val mm = size.width / PHONE_WIDTH_MM
+        val top = 24 * mm
+        drawRoundRect(palette.ink.copy(alpha = 0.25f), Offset(0f, top), Size(size.width, size.height - top), CornerRadius(14.dp.toPx()), style = Stroke(1.5.dp.toPx()))
+        drawRoundRect(palette.ink.copy(alpha = 0.12f), Offset(6 * mm, top + 6 * mm), Size(30 * mm, 30 * mm), CornerRadius(8 * mm))
+        val emitter = Offset(size.width / 2, top)
+        for (angle in listOf(-25f, 0f, 25f)) {
+            val radians = Math.toRadians(angle.toDouble())
+            val end = emitter + Offset((sin(radians) * 20 * mm).toFloat(), (-cos(radians) * 20 * mm).toFloat())
+            drawLine(palette.infrared.copy(alpha = 0.6f), emitter, end, 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 4f)))
         }
+        drawCircle(palette.infrared.copy(alpha = 0.3f), 4.5f * mm, emitter)
+        drawCircle(palette.infrared, 1.8f * mm, emitter)
     }
 }
 

@@ -231,7 +231,7 @@ private fun DrawScope.drawBrackets(center: Offset, side: Float, color: Color, st
 
 /**
  * Point-blank parallax (docs/hardware/rear-camera-ir-blaster-spec.md §5.B): within half a metre
- * the emitter's 14–28 mm offset from the lens is visible, so mark where the beam really lands.
+ * the emitter's 13–28 mm offset from the lens is visible, so mark where the beam really lands.
  */
 @Composable
 private fun BeamMarkerView(marker: BeamMarker, palette: HudPalette) {

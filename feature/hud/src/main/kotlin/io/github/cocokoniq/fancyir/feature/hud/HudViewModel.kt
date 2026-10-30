@@ -31,8 +31,9 @@ import io.github.cocokoniq.fancyir.core.domain.gesture.GestureEvent
 import io.github.cocokoniq.fancyir.core.domain.gesture.PointerInput
 import io.github.cocokoniq.fancyir.core.domain.hardware.EmitterCatalog
 import io.github.cocokoniq.fancyir.core.domain.hardware.EmitterMatch
-import io.github.cocokoniq.fancyir.core.domain.hardware.EmitterProfile
+import io.github.cocokoniq.fancyir.core.domain.hardware.IrMountType
 import io.github.cocokoniq.fancyir.core.domain.hardware.Parallax
+import io.github.cocokoniq.fancyir.core.domain.hardware.PhoneIrProfile
 import io.github.cocokoniq.fancyir.core.domain.recognition.Gallery
 import io.github.cocokoniq.fancyir.core.domain.recognition.ScoreFusion
 import io.github.cocokoniq.fancyir.core.domain.recognition.Similarity
@@ -70,6 +71,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /** What the HUD needs from the app graph. */
 class HudDependencies(
@@ -289,7 +291,9 @@ class HudViewModel(private val deps: HudDependencies) : ViewModel() {
         aim = state
         lapMode = state.posture != Posture.AIMING
         if (lapMode != wasLap) {
-            if (lapMode && targeting.state is TargetingState.Locked) say("LAP MODE · KEYS & GESTURES STILL WORK")
+            if (lapMode && targeting.state is TargetingState.Locked) {
+                say(if (topFrameEmitter()) "TOP-EDGE IR · POINT THE TOP OF THE PHONE" else "LAP MODE · KEYS & GESTURES STILL WORK")
+            }
             return true
         }
         return false
@@ -426,6 +430,8 @@ class HudViewModel(private val deps: HudDependencies) : ViewModel() {
                 deps.haptics.play(HapticCue.LOCK)
                 recent = isLocked.device
                 countLockForHints()
+                // Aimed upright, a top-frame emitter fires at the ceiling: lap mode is how it reaches the device.
+                if (!lapMode && topFrameEmitter()) say("LOCKED · TILT FLAT TO FIRE FROM THE TOP EDGE")
             }
             isLocked != null && wasLocked != null && isLocked.device != wasLocked.device -> {
                 deps.haptics.play(HapticCue.SWITCH)
@@ -613,21 +619,29 @@ class HudViewModel(private val deps: HudDependencies) : ViewModel() {
         fire(device, FunctionKey.displayName(function).uppercase(), code, device.compiled[function])
     }
 
-    private fun currentEmitter(): Pair<EmitterProfile, Boolean>? =
-        emitterOverride?.let(EmitterCatalog::byId)?.let { it to false }
-            ?: deps.emitterMatch?.let { it.profile to true }
+    /** The user's pick, if it still names a registry profile (v1 ids were retired by spec v2). */
+    private fun chosenEmitter(): PhoneIrProfile? = emitterOverride?.let(EmitterCatalog::byId)
+
+    /** The user's pick wins over detection; null when neither knows the phone. */
+    private fun currentEmitter(): EmitterMatch? =
+        chosenEmitter()?.let { EmitterMatch(it, exact = true) } ?: deps.emitterMatch
+
+    private fun topFrameEmitter(): Boolean = currentEmitter()?.profile?.mountType == IrMountType.TOP_FRAME
 
     private fun phoneSheet(): SheetUi.Phone {
-        val current = currentEmitter()
-        val profile = current?.first
+        val detected = chosenEmitter() == null
+        val match = currentEmitter()
+        val profile = match?.profile
+        val rear = profile?.takeIf { it.isRearPlateau }
         return SheetUi.Phone(
             profileName = profile?.displayName,
-            matchedAutomatically = current?.second == true,
-            mount = profile?.mount?.name?.replace('_', ' '),
-            position = profile?.position,
-            offsetMm = profile?.offset?.distanceMm,
-            offsetVectorMm = profile?.offset?.let { o -> o.dxMm?.let { dx -> o.dyMm?.let { dy -> dx to dy } } },
-            profiles = EmitterCatalog.profiles.map { PickerEntry(it.id, it.displayName, "${it.offset.distanceMm.toInt()} mm") },
+            matchedAutomatically = detected && match != null,
+            bestGuess = detected && match?.exact == false,
+            topFrame = profile?.mountType == IrMountType.TOP_FRAME,
+            description = profile?.description,
+            offsetMm = rear?.let { it.offsetDxMm to it.offsetDyMm },
+            diagram = rear?.let { PlateauDiagram(it.islandShape, it.mainLensNormX, it.mainLensNormY, it.irEmitterNormX, it.irEmitterNormY) },
+            profiles = EmitterCatalog.profiles.map { PickerEntry(it.id, it.displayName, it.offsetMm?.let { mm -> "${mm.roundToInt()} mm" } ?: "TOP EDGE") },
         )
     }
 
@@ -684,7 +698,7 @@ class HudViewModel(private val deps: HudDependencies) : ViewModel() {
                 flow.current = step
                 flow.ui = flow.ui.copy(
                     stage = ReconStage.PROBING,
-                    detail = "PROBE ${step.number} · ${step.label} · DID IT REACT?",
+                    detail = "PROBE ${step.number} · ${step.label} · ${if (topFrameEmitter()) "TOP EDGE AT IT · " else ""}DID IT REACT?",
                     candidates = session.candidateCount,
                     probe = step.number,
                 )
@@ -695,7 +709,11 @@ class HudViewModel(private val deps: HudDependencies) : ViewModel() {
                 flow.current = null
                 flow.ui = flow.ui.copy(
                     stage = ReconStage.NO_MATCH,
-                    detail = if (flow.triedOnline) "NOTHING REACTED · CHECK AIM AND RANGE" else "NOTHING REACTED · TRY ONLINE CODE SETS?",
+                    detail = when {
+                        flow.triedOnline && topFrameEmitter() -> "NOTHING REACTED · POINT THE TOP EDGE AT IT"
+                        flow.triedOnline -> "NOTHING REACTED · CHECK AIM AND RANGE"
+                        else -> "NOTHING REACTED · TRY ONLINE CODE SETS?"
+                    },
                 )
             }
         }
@@ -839,9 +857,10 @@ class HudViewModel(private val deps: HudDependencies) : ViewModel() {
 
     private fun beamMarker(): BeamMarker? {
         val distance = focusDistanceM?.takeIf { it < Parallax.POINT_BLANK_M } ?: return null
-        val offset = currentEmitter()?.first?.offset ?: return null
+        // A top-frame emitter doesn't fire along the camera axis: there is no beam to mark.
+        val profile = currentEmitter()?.profile?.takeIf { it.isRearPlateau } ?: return null
         if (viewWidthPx <= 0f) return null
-        val (dx, dy) = Parallax.screenOffsetPx(offset, distance, deps.viewfinder.horizontalFovDeg, viewWidthPx) ?: return null
+        val (dx, dy) = Parallax.screenOffsetPx(profile.offsetDxMm, profile.offsetDyMm, distance, deps.viewfinder.horizontalFovDeg, viewWidthPx) ?: return null
         return BeamMarker(dx, dy, distance)
     }
 

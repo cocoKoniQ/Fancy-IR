@@ -9,11 +9,12 @@ phone's emitter sends what we think. This is the hardware half of ARCHITECTURE.m
 - **Receiver:** any microcontroller with a demodulating IR receiver (TSOP38238, VS1838B, or a
   similar 38 kHz module), running a decoder that can also dump raw mark/space timings. For
   example, IRremoteESP8266's `IRrecvDumpV2` or Arduino-IRremote's `ReceiveDump`.
-- **Phone:** on the Xiaomi 14 the emitter is in the **bottom-right ring of the camera island,
-  about 22 mm to the right of the main lens** (viewed from the back; see
-  `docs/hardware/rear-camera-ir-blaster-spec.md`). Point the island at the receiver from
-  30–100 cm away. Closer than about 20 cm, use the HUD's beam marker instead of the reticle
-  centre.
+- **Phone:** on the Xiaomi 14 the emitter is a **tiny window in the lower gap between the
+  bottom two lenses**, below the Leica logo: about 10 mm right of and 20 mm below the main
+  (top-left) lens, ≈22 mm in all, viewed from the back. The top-right ring is the flash and
+  laser AF, not the emitter (see `docs/hardware/rear-camera-ir-blaster-spec.md`). Point the
+  island at the receiver from 30–100 cm away. Closer than about 20 cm, use the HUD's beam
+  marker instead of the reticle centre: the beam lands below and left of it on screen.
 - **Run:** hold ▶ **MY PHONE** (or tap *Where is my IR blaster?*), then **Run IR test bench**. Nine
   reference frames fire 1.5 s apart. The status line shows `BENCH n/9 · <protocol> · EXPECT
   <word>` as each one goes out.
